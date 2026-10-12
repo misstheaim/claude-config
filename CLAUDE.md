@@ -5,6 +5,16 @@ All my projects live in `C:\Users\User\Documents\Projects`.
 - When I refer to an existing project by name, look for it in this folder first.
 - When I ask to create a new project, create it as a new subfolder here unless I give a different path.
 
+# Changes to remote sources
+
+Always ask for my approval before any action that changes something outside this machine: GitHub (repos, issues, PRs, labels, Projects, comments, releases, settings), other APIs and services, cloud resources, databases that aren't local, package registries, documents, messages, and so on.
+
+- **Allowed without asking:** read-only calls such as GET requests, fetching, searching, listing, viewing and `git fetch`.
+- **Needs approval:** anything that creates, updates, deletes, sends, publishes or triggers something (POST/PUT/PATCH/DELETE, `gh ... create/edit/delete/close/merge`, deploys, running remote jobs).
+- When asking, say exactly what will change and where (service, repo or resource, and the action).
+- An explicit request from me for that specific action counts as approval (e.g. "push to origin", "create the issues"). Approval for a clearly described batch (e.g. "create these 12 issues") covers that batch only, not later actions.
+- If you're unsure whether a call changes something, treat it as a change and ask.
+
 # Git commits and pushes
 
 Never commit or push on your own initiative. Finishing a task, fixing a bug, or making changes is not a reason to commit.
