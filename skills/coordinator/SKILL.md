@@ -62,6 +62,7 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 - **Run log:** look in `<git-common-dir>/coordinator/` (`git rev-parse --git-common-dir`; inside `.git`, so it's never committed and every worktree shares it).
   - **Continuing:** if the newest log has the same scope and isn't marked finished, this session continues that run (normally after a wave handoff, §8). Read it first, and reuse what it records (workflow in use, known baseline failures, the Fable choice, the user's decisions) without asking again. Open items it lists come first.
   - **New run:** otherwise create `run-<YYYY-MM-DD-HHMM>.md`. It's the coordinator's memory for this run; see "Run log" below.
+  - **Event log:** next to it, append to `run-<YYYY-MM-DD-HHMM>.events.jsonl` (same name as the run log; create it on a new run). Write `session_start` in the same command that creates or reads the run log. See "Event log" below.
 - **Dev tools on the machine:** find the toolchain the repo needs (from `docs/development.md`, a README "Requirements" section, or project files such as `package.json`, `go.mod`, `*.csproj`), and check each tool with its version command.
   - **If anything is missing, stop** and give the user the exact install commands. Never install system software yourself: this mode's authority covers only the GitHub repo.
   - Project-level dependencies such as `npm ci` and `go mod download` are fine; the subagents run them as part of their tickets.
@@ -83,6 +84,16 @@ Your context can be compacted during a long run, and in-flight state lost with i
 - **The user's decisions** during the run go into the log, and also as a comment on each affected ticket, so later sessions see them too.
 - **After a compaction** (or whenever you're unsure of the state), re-read the log before acting.
 - **At a wave handoff** (§8): the waves done, `origin/<base>`'s current commit, the next wave's tickets, open items waiting on the user, and the follow-ups created. Mark the log **finished** when the scope is done.
+
+### Event log
+
+Besides the run log (for you), keep a machine-readable event log for the `analyze-coordinator` skill. Log **only your judgments**; the analyzer reads everything mechanical (dispatches, resumes, PRs, merges, CI, tokens) from the transcripts. The full spec is `references/events.md`; you don't need to read it, the list below is enough.
+
+- **Events:** `session_start` {wave, continuing}, `baseline` {result, known_failures}, `wave_start` {wave, tickets}, `agent_return` {ticket, agent_id, outcome: question/partial/error; only when it's not a finished report}, `escalation` {ticket, kind: business/blocker/destructive/technical, resolved_by: coordinator/user}, `user_wait` {reason, ticket}, `review` {ticket, path: full/light, findings: {critical,high,medium,low,nit}, verification_failures, tampering}, `triage` {ticket, fix, reject, followup, ask}, `final_gate` {ticket, result, cause}, `conflict` {ticket, kind: merge/tests/spec, class, resolved_by}, `ticket_stopped` {ticket, reason}, `wave_handoff` {wave, merged, open}, `run_finished` {merged, stopped}. Every line also has `ts` (ISO 8601 UTC) and `event`.
+- **Never spend a tool call on an event.** Chain the append onto a command you run anyway (`… && printf '%s
+' '<json>' >> "$EVENTS"`), or put it in the same message as your next tool call. Events that happen together go in one `printf` with several lines.
+- **Every subagent prompt starts with `Ticket #<n>:`**, so the analyzer can match the subagent to its ticket.
+- Append only; never edit, delete or read the log back.
 
 ### Context hygiene
 
@@ -114,7 +125,7 @@ For each ticket, launch one implementer subagent with the Agent tool:
 - **`isolation: "worktree"`**, so parallel tickets never share a working tree.
 - **`model`** from the ticket's "Suggested model": Haiku → `haiku`, Sonnet → `sonnet`, Opus → `opus`. Fable → `opus` only if the user chose that in preflight. Without one, use `sonnet`. **Never pass `fable`.**
 - **`effort`** by the same tier, to keep thinking tokens in proportion: Haiku → `low`, Sonnet → `medium`, Opus → `high`.
-- **Prompt:** "Implement GitHub issue #<n> in <repo> --autonomous, branching from the latest `origin/<base>`. The project's workflow is in its CLAUDE.md and docs/development.md. Read only the plan sections the ticket cites." Add any user decisions from this run that affect the ticket.
+- **Prompt:** "Ticket #<n>: implement GitHub issue #<n> in <repo> --autonomous, branching from the latest `origin/<base>`. The project's workflow is in its CLAUDE.md and docs/development.md. Read only the plan sections the ticket cites." Add any user decisions from this run that affect the ticket.
 
 **Questions from implementers.** Implementers run in autonomous mode and decide technical questions themselves ("Autonomous: decide or escalate" in `implement-ticket`) and return only business decisions, real blockers or destructive actions. When one returns a question anyway:
 - **Technical, or settled by the ticket, plan or workflow:** answer it yourself, with your best judgment where nothing settles it. Don't pass it to the user.
@@ -149,7 +160,7 @@ Then go to §6. Anything you're unsure about takes the full path.
    - **Otherwise:** one tier above the implementer, capped at Opus: Haiku → `sonnet`, Sonnet → `opus`, Opus → `opus`.
    - Anything touching auth, payments, data migrations or security-sensitive code gets `opus`, whatever its size.
 
-   Its prompt contains: the repo, ticket number, worktree path, branch and base (`origin/<base>`), the plan path, the workflow's commands, a log directory next to the run log for its command output, the path `~/.claude/skills/decompose-feature/references/test-cases.md`, and, for a ticket without test cases, your goal-check checklist.
+   Its prompt starts with `Ticket #<n>:` and contains: the repo, worktree path, branch and base (`origin/<base>`), the plan path, the workflow's commands, a log directory next to the run log for its command output, the path `~/.claude/skills/decompose-feature/references/test-cases.md`, and, for a ticket without test cases, your goal-check checklist.
 
    Its definition makes it return a **verification checklist** (test case → test → result, the tampering scan, the end-to-end check for UI tickets, the goal checklist) and **findings**. It runs only the ticket's own tests, not the full suite: the full suite runs once, in the final gate.
 
@@ -167,7 +178,7 @@ Then go to §6. Anything you're unsure about takes the full path.
    - **Ask the user:** anything that would change a test case's expected behaviour, the ticket's scope, or a plan decision.
 3. **Pick who fixes**, the cheapest agent that can do it well:
    - **The original implementer** (resume it with `SendMessage`) when any fix needs understanding of the change: logic bugs, missing behaviour, failing test cases, design problems. Resuming re-sends its whole history, so don't use it for trivial fixes.
-   - **A fresh fixer** (`subagent_type: "ticket-fixer"`, no isolation) when **every** fix is mechanical and small (renames, a missing null check, a lint error, a small test tweak): `model: "haiku"`, `effort: "low"`; use `sonnet` with `effort: "medium"` if a fix needs a little reasoning. Its prompt: the worktree path, the base, and each fix with file, location and the exact change.
+   - **A fresh fixer** (`subagent_type: "ticket-fixer"`, no isolation) when **every** fix is mechanical and small (renames, a missing null check, a lint error, a small test tweak): `model: "haiku"`, `effort: "low"`; use `sonnet` with `effort: "medium"` if a fix needs a little reasoning. Its prompt starts with `Ticket #<n>:`, then the worktree path, the base, and each fix with file, location and the exact change.
 
    One round goes to one agent: if the findings are mixed, send them all to the implementer.
 4. **Send the fixes** in one message: the numbered findings with the agreed fix, plus "Apply only these, run lint and the tests the fixes affect (the coordinator runs the full suite at the end), and report." If resuming the implementer fails, use a new `ticket-implementer` (same model) on the same worktree and branch, with the ticket number and the findings.
@@ -256,7 +267,7 @@ Never edit, delete or skip an agreed test case to resolve a conflict without the
 
 ## 9. Stop when
 
-- the scope is done: mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
+- the scope is done: append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
 - a wave is finished: hand off as in §8;
 - the user interrupts or asks to stop;
 - the same ticket has failed twice, or used up its fix rounds;
