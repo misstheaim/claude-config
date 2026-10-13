@@ -114,9 +114,13 @@ For each ticket, launch one implementer subagent with the Agent tool:
 - **`isolation: "worktree"`**, so parallel tickets never share a working tree.
 - **`model`** from the ticket's "Suggested model": Haiku → `haiku`, Sonnet → `sonnet`, Opus → `opus`. Fable → `opus` only if the user chose that in preflight. Without one, use `sonnet`. **Never pass `fable`.**
 - **`effort`** by the same tier, to keep thinking tokens in proportion: Haiku → `low`, Sonnet → `medium`, Opus → `high`.
-- **Prompt:** "Implement GitHub issue #<n> in <repo>, branching from the latest `origin/<base>`. The project's workflow is in its CLAUDE.md and docs/development.md. Read only the plan sections the ticket cites." Add any user decisions from this run that affect the ticket.
+- **Prompt:** "Implement GitHub issue #<n> in <repo> --autonomous, branching from the latest `origin/<base>`. The project's workflow is in its CLAUDE.md and docs/development.md. Read only the plan sections the ticket cites." Add any user decisions from this run that affect the ticket.
 
-**Questions from implementers.** Subagents can't ask the user. When an implementer returns a question instead of a finished report, answer it yourself if the ticket, plan or workflow settles it; otherwise ask the user. Then resume the implementer with the answer (`SendMessage`). Record the decision in the run log and on the ticket.
+**Questions from implementers.** Implementers run in autonomous mode and decide technical questions themselves ("Autonomous: decide or escalate" in `implement-ticket`) and return only business decisions, real blockers or destructive actions. When one returns a question anyway:
+- **Technical, or settled by the ticket, plan or workflow:** answer it yourself, with your best judgment where nothing settles it. Don't pass it to the user.
+- **Business or product decision, or a blocker only the user can remove:** ask the user. Collect such questions across tickets in flight and ask them together.
+
+Then resume the implementer with the answer (`SendMessage`), and record the decision in the run log and on the ticket. Also skim each report's "Decisions made"; challenge one only if it contradicts the plan or the ticket.
 
 **Keep track of every ticket in flight** in the run log: ticket number, implementer agent ID (from the Agent result), model, branch, worktree path, reviewer agent ID, and the fix-round count. A subagent that has returned its report isn't gone: `SendMessage` to its agent ID resumes it with its full context, and its worktree stays because it has changes. Treat it as the ticket's owner until the PR merges.
 

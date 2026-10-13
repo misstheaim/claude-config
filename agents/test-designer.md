@@ -17,6 +17,6 @@ Return:
 2. **Problems found:**
    - acceptance criteria too vague to test, with a proposed rewrite;
    - contradictions between tasks, or with the codebase;
-   - behaviour the plan leaves undefined, with the question the user needs to answer.
+   - behaviour the plan leaves undefined that is a business decision, with the question for the user and the default you'd assume.
 
-You can't ask the user anything: put every open question in the problems list.
+You can't ask the user anything. Decide technical details yourself (test levels, how to control time or external services, concrete values the codebase implies). Put only business questions in the problems list, each with the default you'd assume.
