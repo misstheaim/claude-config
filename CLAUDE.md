@@ -33,6 +33,36 @@ Never commit or push on your own initiative. Finishing a task, fixing a bug, or 
 - The same applies to anything else that publishes or rewrites history: force-push, creating or merging PRs, pushing tags, rebasing or amending commits that were already pushed.
 - If you think a commit or push would be useful, suggest it in one line and wait for my answer.
 
+# Exception: coordinator mode
+
+When I run the `/coordinator` skill, the permissions documented in that skill apply for that run, overriding the two sections above, but only within them:
+
+- **Scope:** only the run's target GitHub repo.
+- **Allowed without asking:** branches, commits, pushes, PRs, merges into the run's base branch with the project's merge method (squash by default), issue edits and comments, and Project items. Merges into any other branch (e.g. `main` or `release/*`) still need my approval.
+- **Unchanged:** everything else (other repos and services, force-push, repo settings, releases, tags) still needs my approval as usual.
+- **Duration:** the exception ends when the run ends. It never applies to `/implement-ticket` or any other session.
+
+# Fable model
+
+Never use the Fable model without my explicit permission for that specific use: not for subagents (`model: "fable"` or a full `claude-fable-*` id), custom agent definitions, `claude --model` commands, or anything else that runs on it. Ask first, saying what it's for and why a lower tier won't do. A PreToolUse hook (`~/.claude/hooks/fable_guard.py`) also asks me before such calls.
+
+- Naming Fable as a ticket's "Suggested model" is fine; it's a suggestion, not a use.
+- The coordinator never uses Fable at all, even with permission (see its skill).
+
+# Base branch for new branches
+
+Before creating a feature branch, always fetch the latest base branch and create the new branch from its remote version:
+
+```bash
+git fetch origin <base>
+git switch -c <new-branch> origin/<base>
+```
+
+- **Base branch:** decide it for the situation. Use what I said, the project's workflow (its CLAUDE.md or `docs/development.md`), the kind of work (e.g. a hotfix for a released version) and what the repo's recent PRs target. If it's still unclear, ask.
+- Never branch from a stale local copy or from whatever branch happens to be checked out.
+- PRs target the same base branch.
+- Fetching is read-only, so it needs no approval.
+
 # Git naming conventions
 
 Use these formats for every commit, branch and PR so they stay consistent.

@@ -23,8 +23,9 @@ Propose these settings to the user, with a recommended value for each, and creat
 | Description | One line from the plan's goal |
 | `.gitignore` | Template for the stack, e.g. `VisualStudio` for .NET, `Node` for JS/TS (skip if the folder already has one) |
 | License | None for private repos; MIT if it will be public |
-| README | Yes for an empty repo; no if the folder already has one |
+| README | No for a new project from `decompose-feature`: its bootstrap task writes it. Otherwise yes for an empty repo, no if the folder already has one |
 | Local folder | Connect it as `origin` if the project already exists locally |
+| Branches (new project) | Initial commit on `main`, `develop` created from it, `develop` as the default branch (see "Branches") |
 
 ```bash
 # New, empty repo on GitHub
@@ -51,6 +52,29 @@ gh project edit <project-number> --owner OWNER --visibility PRIVATE
 gh project link <project-number> --owner OWNER --repo OWNER/REPO
 ```
 
+### Branches
+
+For a new project, after the user approved the batch (initial commit, pushes, default branch), and **after the issues exist and their numbers are written into the plan**, so the plan is pushed in its final form:
+
+```bash
+git switch -c main                       # in a fresh repo, if the branch isn't called main yet
+git add .gitignore CLAUDE.md docs/
+git commit -m "chore: initial project setup"
+git push -u origin main
+git switch -c develop
+git push -u origin develop
+gh repo edit OWNER/REPO --default-branch develop
+```
+
+`develop` must be the default branch: GitHub's `Closes #<n>` only closes an issue when the PR merges into the default branch.
+
+## Milestones
+
+```bash
+gh api -X POST repos/OWNER/REPO/milestones -f title="MVP (v0.1.0)" -f description="<goal>"
+gh issue edit <number> -R OWNER/REPO --milestone "MVP (v0.1.0)"   # or --milestone on gh issue create
+```
+
 ## Labels and colours
 
 Create the labels that don't exist yet (`gh label list -R OWNER/REPO` to check). `--force` updates an existing label's colour.
@@ -68,6 +92,7 @@ Create the labels that don't exist yet (`gh label list -R OWNER/REPO` to check).
 | `area:design` | `E99695` | UX/UI design, mockups |
 | `area:testing` | `006B75` | Test suites, test infrastructure |
 | `area:docs` | `C5DEF5` | Documentation |
+| `hotfix` | `B60205` | Urgent fix to a released version; branches from `main` |
 
 ```bash
 gh label create "area:backend" --color 0E8A16 --description "Server, APIs, business logic" -R OWNER/REPO --force

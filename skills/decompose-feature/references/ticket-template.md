@@ -25,7 +25,9 @@ Stories are linked as sub-issues.
 <what a user or the system can do when this is done>
 
 ## Acceptance criteria
-- [ ] ...
+- [ ] AC1: ...
+
+Story-level test cases (`S<n>-TC..`) live in the ticket of the story's last task.
 
 ## Plan
 `docs/plans/<slug>.md`, section <n>
@@ -50,8 +52,18 @@ The task will be implemented by a fresh session with no other context, so the bo
 - Approach: <the agreed design, in a few bullets>
 
 ## Acceptance criteria
-- [ ] ...
-- [ ] Tests: <what must be covered>
+- [ ] AC1: ...
+- [ ] AC2: ...
+
+## Test cases
+Every case must be implemented as an automated test and pass. Don't change a case's expected behaviour; if one looks wrong, report it.
+
+| ID | Kind | Level | Given / When / Then | Covers |
+|---|---|---|---|---|
+| T<n>-TC01 | happy | <unit\|integration\|e2e> | Given ..., when ..., then ... | AC1 |
+| T<n>-TC02 | edge | ... | ... | AC2 |
+
+<or "None (<reason>)", with a `Verify:` line on each acceptance criterion>
 
 ## Dependencies
 Blocked by #N. <or "None">

@@ -10,6 +10,8 @@
 !agents/**
 !commands/
 !commands/**
+!hooks/
+!hooks/**
 
 # Account-synced built-in skills are downloaded automatically on every machine
 skills/synced/

@@ -1,5 +1,30 @@
 {
   "autoUpdatesChannel": "latest",
   "theme": "dark",
-  "cleanupPeriodDays": 90
+  "cleanupPeriodDays": 90,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude/hooks/fable_guard.py",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ~/.claude/hooks/fable_guard.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
