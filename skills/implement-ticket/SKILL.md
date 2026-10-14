@@ -73,6 +73,11 @@ Stop and report, without changing anything, when:
 ## 4. Implement
 
 - **Learn the conventions first:** the code around the change, the repo's CLAUDE.md, and its existing tests and build scripts. Write code that matches.
+- **Explore subagents for broad searches:** when a question means sweeping many files and you only need the answer (where something is defined, every caller of an API, how a pattern is used across modules), delegate it to an `Explore` subagent instead of reading it all into your own context. This applies in both modes.
+  - Call it with `subagent_type: "Explore"`, `model: "haiku"` and `effort: "low"`, or with `model: "sonnet"` and `effort: "medium"` for a "very thorough" sweep. Always pass the model: without it, Explore runs on the main session's model.
+  - Start its prompt with `Ticket #<n>:`, and ask for a compact answer: file paths, line numbers and a few lines of explanation, not file dumps.
+  - Read the files you'll change yourself. Explore locates code; it doesn't replace understanding what you edit.
+  - Don't use it for a single known file or a targeted grep; that's cheaper inline. Use only `Explore`, no other subagent types.
 - **Larger tickets:** write a short plan of a few bullets in your reply before coding. Ask only if a real decision is left open (autonomous: only a business decision).
 - **Stay in scope:**
   - Do what the goal and acceptance criteria require, and nothing more.

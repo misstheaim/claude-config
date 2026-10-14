@@ -34,6 +34,7 @@ ROLE_BY_AGENT_TYPE = {
     "ticket-reviewer": "reviewer",
     "ticket-fixer": "fixer",
     "test-designer": "test-designer",
+    "Explore": "explorer",
 }
 
 
@@ -346,16 +347,24 @@ def main():
         s = parse_transcript(sf)
         s["session_id"] = os.path.basename(sf)[:-6]
         sub_dir = os.path.join(sf[:-6], "subagents")
-        tool_by_agent = {aid: tid for tid, aid in s["agent_results"].items()}
-        for af in sorted(glob.glob(os.path.join(sub_dir, "agent-*.jsonl"))):
-            aid = os.path.basename(af)[len("agent-"):-len(".jsonl")]
+        # Subagents can spawn their own (e.g. an implementer's Explore agents), so look up
+        # Agent calls in every transcript of the session, not only the coordinator's.
+        parsed = []
+        for af in sorted(glob.glob(os.path.join(sub_dir, "**", "agent-*.jsonl"), recursive=True)):
             meta = {}
             mf = af[:-len(".jsonl")] + ".meta.json"
             if os.path.exists(mf):
                 with open(mf, encoding="utf-8") as fh:
                     meta = json.load(fh)
-            a = parse_transcript(af)
-            call = s["agent_calls"].get(meta.get("toolUseId") or tool_by_agent.get(aid), {})
+            parsed.append((af, meta, parse_transcript(af)))
+        all_calls = dict(s["agent_calls"])
+        tool_by_agent = {aid: tid for tid, aid in s["agent_results"].items()}
+        for _, _, p in parsed:
+            all_calls.update(p["agent_calls"])
+            tool_by_agent.update({aid: tid for tid, aid in p["agent_results"].items()})
+        for af, meta, a in parsed:
+            aid = os.path.basename(af)[len("agent-"):-len(".jsonl")]
+            call = all_calls.get(meta.get("toolUseId") or tool_by_agent.get(aid), {})
             a.update({
                 "agent_id": aid,
                 "session_id": s["session_id"],
