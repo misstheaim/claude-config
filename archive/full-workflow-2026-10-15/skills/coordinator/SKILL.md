@@ -84,6 +84,15 @@ Your context can be compacted during a long run, and in-flight state lost with i
 - **The user's decisions** during the run go into the log, and also as a comment on each affected ticket, so later sessions see them too.
 - **After a compaction** (or whenever you're unsure of the state), re-read the log before acting.
 - **At a wave handoff** (§8): the waves done, `origin/<base>`'s current commit, the next wave's tickets, open items waiting on the user, and the follow-ups created. Mark the log **finished** when the scope is done.
+- **A stopped ticket** (§9) keeps its worktree, and with it the ticket notes, so a later session can continue it. The log records the worktree path.
+
+### Ticket notes
+
+Each implementer keeps `<worktree>/.scratch/ticket-notes.md`: the ticket's status, approach, criteria and test case status, decisions (including what was tried and dropped, and how review findings were handled), gotchas and a short log, capped at about 800 lines (about 20k tokens) (`ticket-implementer` defines it). It holds the implementer's working context that its report doesn't bring back to you, so a fresh agent on the ticket (a review follow-up round, a recovery, a conflict fix) can pick up where the last one stopped instead of starting from your brief alone.
+- **Point every fresh implementer and fixer at it** (§3): an implementer reads it first, so your brief stays short; a fixer only appends a log line.
+- **Reviewers don't get it:** they judge the code independently, and their prompt doesn't mention it.
+- **Don't read it yourself** as routine; reports, reviews and the diff are your view. Read only its Status section when an agent died without a usable report and you need it for a recovery brief.
+- **It's deleted with the worktree** after the PR merges (§6). Notes never go into a commit; `.scratch/` is ignored.
 
 ### Event log
 
@@ -148,9 +157,9 @@ Then send the answer per "Resume or dispatch fresh" below (an agent that stopped
 - **Interrupted agents** (stopped by an error, a limit, or with a question before finishing): resume with `SendMessage` if its context is under about **200k tokens** **or** less than **5 minutes** have passed since its last turn (its prompt cache is still warm, so even a large history is cheap to resume). Dispatch a fresh agent with a recovery brief (below) only when both fail: the context is over 200k **and** more than 5 minutes have passed.
 - **A scope or design change** (e.g. the ticket's approach has to be redesigned) always gets a fresh agent.
 
-A fresh agent has the same type and model and works on the same worktree and branch (no isolation). Its prompt starts with `Ticket #<n>:`, then the worktree path, branch and base, and:
-- **Compact brief** (follow-up round): a summary of the diff so far (`git diff --stat origin/<base>...` plus a few lines on the approach), and the findings with the agreed fixes, or the decision it needs. A fresh reviewer also gets the earlier findings and how each was handled.
-- **Recovery brief** (interrupted agent): why it stopped (the error or question, and the answer if there is one), what's done (from its last output and the diff), and what's left (the remaining steps and test cases). Check the worktree state yourself (`git status`, `git diff --stat`) rather than trusting the interrupted agent's last words.
+A fresh agent has the same type and model and works on the same worktree and branch (no isolation). Its prompt starts with `Ticket #<n>:`, then the worktree path, branch and base. A fresh **implementer** also gets the line "Read `.scratch/ticket-notes.md` first: the previous agent's notes on this ticket." Then:
+- **Compact brief** (follow-up round): the diff so far (`git diff --stat origin/<base>...`), and the findings with the agreed fixes, or the decision it needs. For an implementer, leave the approach to the notes; describe it in a few lines only if the worktree has no notes. A fresh reviewer gets a few lines on the approach (it doesn't read the notes) plus the earlier findings and how each was handled.
+- **Recovery brief** (interrupted agent): why it stopped (the error or question, and the answer if there is one), what's done (from its last output and the diff), and what's left (the remaining steps and test cases). Check the worktree state yourself (`git status`, `git diff --stat`) rather than trusting the interrupted agent's last words or its notes.
 
 The fresh agent becomes the ticket's owner; update its agent ID in the run log.
 
@@ -215,7 +224,7 @@ Other tickets in flight may continue while one waits. Keep the triage (fixed / r
 4. Push the branch and open the PR against the base branch (`gh pr create --base <base>`): title `#<n> <Title>`, the user's PR template, `Closes #<n>`. Under "Testing", list the test cases with results (or the goal-check checklist) and the review triage in a few lines.
 5. If the repo has CI, wait for the checks (`gh pr checks --watch`). If one fails, send it to a fresh implementer as a fix round (§5), or stop and ask.
    - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): stop here. Show the user the green PR and the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, merge with the workflow's method for that branch and do the approved steps. Tags and releases need their own explicit approval in that same request.
-6. Merge with the workflow's merge method and branch deletion (default `gh pr merge --squash --delete-branch`). If GitHub reports a conflict (the base moved after the push), resolve it as in §7a and retry. Then fast-forward the local base branch and remove the worktree. Don't message the ticket's subagents after this.
+6. Merge with the workflow's merge method and branch deletion (default `gh pr merge --squash --delete-branch`). If GitHub reports a conflict (the base moved after the push), resolve it as in §7a and retry. Then fast-forward the local base branch and remove the worktree, which also deletes its ticket notes. If the worktree can't be removed, delete `<worktree>/.scratch/ticket-notes.md` yourself. Don't message the ticket's subagents after this.
    - `Closes #<n>` only closes the issue when the base is the repo's default branch. If the issue is still open after the merge, close it yourself: `gh issue close <n> -R <repo> -c "Done in PR #<m>"`.
 7. Log one line: `✓ #<n> <title> → PR #<m> merged (<k> test cases passed)`.
 

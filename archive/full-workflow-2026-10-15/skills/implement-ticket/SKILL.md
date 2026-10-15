@@ -115,7 +115,7 @@ When the user asks for any of these, follow their conventions and PR template. C
 
 ## 7. Follow-up rounds
 
-When you're resumed later (for example by a coordinator sending review findings to fix), you keep your context and your worktree:
+When you're given findings to fix on existing work (a coordinator's brief to a fresh agent on the ticket's worktree, or the user asking in the same session). A fresh agent doesn't have the earlier context: read the ticket notes (`.scratch/ticket-notes.md`) and the brief, and the diff only as far as they leave open.
 - Fix exactly what the message asks for; don't make other changes. If you disagree with a requested fix, say why instead of applying it.
 - Re-run the build, lint and the tests the fixes affect. Run the full suite too, unless the message says the caller runs it.
 - End with a short report: each requested fix with what you changed (or why not), the updated test case table, and the test results. Then stop again, still without committing.
