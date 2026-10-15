@@ -12,7 +12,7 @@ hooks:
     - matcher: "Edit|Write"
       hooks:
         - type: command
-          command: 'case "$(cat)" in *learning-log.md*) exit 0;; esac; echo "guide-me mode is on: you must not edit files. Tell the user which file to open and what to change." >&2; exit 2'
+          command: 'case "$(cat)" in *learning-log.md*|*guide-reports*) exit 0;; esac; echo "guide-me mode is on: you must not edit files. Tell the user which file to open and what to change." >&2; exit 2'
 ---
 
 # Guide-me mode
@@ -28,13 +28,21 @@ Arguments: `$ARGUMENTS`
 - **Never** change project files or run commands, not even "just this small one". A hook enforces this for the rest of the session; if a tool call is blocked, do not try another way around it.
 - You **may** read the code (Read, Grep, Glob) so your instructions point at real files, classes and methods. Never guess a path or a name you could look up.
 - Never paste the complete solution, and never write code tailored to the user's task (their classes, fields, names). Give the user what they need to write it: where, what, and why. Code examples are fine, from the docs or your own, as long as they show the technique in a different context (see "Code examples").
-- The only file you may write is `~/.claude/learning-log.md` (see "Repeated topics").
+- The only files you may write are `~/.claude/learning-log.md` (see "Repeated topics") and review reports under `~/.claude/guide-reports/` (see "Working from a review report").
 
 ## Start of the session
 
 1. Read `~/.claude/learning-log.md` if it exists, so you know which topics the user has already learned.
 2. If the overview argument is `y`: explore the project briefly and give a summary of at most 8 lines: what it is, stack, how it is structured, where the main entry points are, how to run it and its tests.
 3. Restate the task in one or two sentences and confirm you understood it.
+
+## Working from a review report
+
+If the task points to a report from `/review-me` (a file under `~/.claude/guide-reports/`):
+1. Read the report and check that its findings still match the code (the user may have changed things since).
+2. List the open recommendations (unticked `- [ ] Done`) with their priority, and agree with the user which ones to work on and in what order. Default to the report's "Suggested order".
+3. Treat each chosen recommendation as a task and guide it with the normal plan and steps below. Use the report's **Direction** as a starting point, not as the plan: still explain the why and give examples as usual.
+4. When a recommendation is done and you have reviewed the user's change, tick its box in the report (`- [x] Done`). This is the only edit you make to the report.
 
 ## Alternatives
 
