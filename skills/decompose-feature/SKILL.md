@@ -1,6 +1,6 @@
 ---
 name: decompose-feature
-description: PERSONAL PROJECTS ONLY. Decompose a new project or a feature into a hierarchy (epics, stories, session-sized tasks) with a plan document and GitHub tickets; a new project also gets its docs/development.md (Git Flow branching, releases) and CLAUDE.md. Large features get the full process; small features (about 3 tasks or fewer) take a light path that still discusses the design with the user, updates the plan and creates the tickets, but skips the heavy analysis and the reviewer subagent. Use when the user asks to decompose, break down, plan into tickets or add a new feature to a project's plan, and only for the user's personal projects (their own GitHub account), never for enterprise or company work. Do NOT use for editing an existing ticket, for bug reports, or for implementing a task.
+description: PERSONAL PROJECTS ONLY. Decompose a new project or a feature into a hierarchy (epics, stories, session-sized tasks) with a plan document and GitHub tickets; a new project also gets its docs/development.md (Git Flow branching, releases) and CLAUDE.md. No test cases or automated tests are planned. Large features get the full process; small features (about 3 tasks or fewer) take a light path that still discusses the design with the user, updates the plan and creates the tickets, but skips the heavy analysis and the reviewer subagent. Use when the user asks to decompose, break down, plan into tickets or add a new feature to a project's plan, and only for the user's personal projects (their own GitHub account), never for enterprise or company work. Do NOT use for editing an existing ticket, for bug reports, or for implementing a task.
 argument-hint: "[feature or project description]"
 ---
 
@@ -9,6 +9,8 @@ argument-hint: "[feature or project description]"
 Your job is to turn a big feature or a new project into a **well-designed high-level plan, split into pieces that separate Claude sessions will implement later**. Treat it as writing a plan whose points will each be executed by a different session that has none of today's context.
 
 The plan's quality is the goal; the tickets are only its output. **Do not rush to tickets.** Most of the work is understanding the feature with the user.
+
+**No automated tests.** The implementation workflow (`implement-ticket`, `/coordinator`) doesn't write or run tests. So don't create test cases, testing tasks, a testing strategy, test commands or instructions to write tests, in the plan, the tickets or the project files. Acceptance criteria are checked by reading the code, running a command, or a manual step.
 
 Feature or project: `$ARGUMENTS` (if empty, ask what to decompose).
 
@@ -21,7 +23,7 @@ This skill is only for the user's **personal** projects. A personal project is o
 ## Phase 1: Understand the context
 
 - **Existing codebase:** analyse it, especially the parts the feature touches: architecture, layers, conventions, data model, existing similar features, tests, build and deploy setup. Note the concrete files and modules each part of the feature will change.
-- **Empty folder / new project:** research current best practices on the web for the stack and the domain (project structure, libraries, auth, testing, deployment). Cite what you base recommendations on.
+- **Empty folder / new project:** research current best practices on the web for the stack and the domain (project structure, libraries, auth, deployment). Cite what you base recommendations on.
 - Look for an existing GitHub repo and Project for this work (`gh repo view`, `gh project list --owner <owner>`), so you know where tickets will go.
 
 Give the user a short summary of what you found before moving on.
@@ -42,10 +44,9 @@ Otherwise (a new project, a feature that needs several stories, new architecture
 Spend effort in proportion to the feature. A small feature still needs a conversation and tickets, but not a big design process.
 1. **Discuss (short Phase 2):** ask only the questions whose answers change the design or the scope, usually 2 to 4, with a recommended option for each. Raise real risks. Don't walk through alternatives for decisions that already follow from the plan.
 2. **Place it in the hierarchy:** attach it to the existing epic it belongs to, as a new story, or add tasks to an existing story. Create a new epic only when the feature fits under none of them. Don't create an epic and a story for one or two tasks if an existing parent fits.
-3. **Update the existing plan document** instead of writing a new one: add the new decisions (continue the numbering), a short design section, the new items in the hierarchy, the task details in the same format as the other tasks, and the order of work. If the project has no plan document, write a short one with only the sections the feature needs.
-4. **Write the test cases yourself (short Phase 4.5):** no test designer subagent, unless the user asks for one. Follow `references/test-cases.md`, then check your cases against its rules as a separate pass. Show them to the user with the tasks.
-5. **Skip Phase 5:** no reviewer subagent, unless the user asks for one. Review your own tasks against the "Good tasks" rules instead.
-6. **Create the tickets (Phase 6):** same rules: approval first, then the template, labels, sub-issue links, blocked-by links on existing issues, adding them to the Project, and writing the numbers back into the plan.
+3. **Update the existing plan document** instead of writing a new one: add the new decisions (continue the numbering), a short design section, the new items in the hierarchy, the task details in the same format as the other tasks (leaving out any test cases or testing strategy the older plan has), and the order of work. If the project has no plan document, write a short one with only the sections the feature needs.
+4. **Skip Phase 5:** no reviewer subagent, unless the user asks for one. Review your own tasks against the "Good tasks" rules instead.
+5. **Create the tickets (Phase 6):** same rules: approval first, then the template, labels, sub-issue links, blocked-by links on existing issues, adding them to the Project, and writing the numbers back into the plan.
 
 ## Phase 2: Shape the feature with the user
 
@@ -71,21 +72,21 @@ Use three levels (GitHub sub-issues link them):
 Rules:
 - **Root:** when adding a feature to an existing project, create one epic for the whole feature as the root, and link everything under it. For a new project there is no single root: the top-level epics (plus a "Project setup" epic for scaffolding, CI, environments) form the first level.
 - **Bootstrap task (new project):** the first task of the "Project setup" epic, alone in the first wave, blocking everything else. It makes the repo ready for development:
-  - the project skeleton for the chosen stack, with build, lint and test commands that work and one passing smoke test;
-  - the **README**: what the project is, requirements, setup, how to run, test and lint, the project structure, and links to `docs/development.md` and the plan;
+  - the project skeleton for the chosen stack, with build, lint and run commands that work;
+  - the **README**: what the project is, requirements, setup, how to build, run and lint, the project structure, and links to `docs/development.md` and the plan;
   - the real commands in `docs/development.md` and `CLAUDE.md`, replacing the planned ones.
 
   Keep it small enough for one Sonnet session: CI, environments and deployment go into their own tasks. Mark any manual step (an account, a secret, an install) in the ticket.
 - **Milestones:** every task belongs to one milestone (release) from the plan.
-- **Split until every leaf is session-sized.** That is the main test: if a piece could not realistically be finished, tested and reviewed in a single session, split it further, into sub-stories or tasks. Add a level (story under story) only when a story is still too big; don't add levels for their own sake.
-- **Good stories** are independent, valuable on their own, small enough to estimate and testable (INVEST).
+- **Split until every leaf is session-sized.** That is the main test: if a piece could not realistically be finished and checked in a single session, split it further, into sub-stories or tasks. Add a level (story under story) only when a story is still too big; don't add levels for their own sake.
+- **Good stories** are independent, valuable on their own, small enough to estimate and checkable (INVEST).
 - **Good tasks:**
-  - have one clear outcome and acceptance criteria that can be checked, numbered `AC1`, `AC2`, ... (test cases are added in Phase 4.5 and refer to them);
+  - have one clear outcome and acceptance criteria that can be checked without automated tests (in the code, with a command, or by a manual step), numbered `AC1`, `AC2`, ...;
   - are self-contained: a fresh session must be able to do it from the ticket and the plan document alone;
   - touch one area where possible (backend, frontend, …). Split a cross-area piece into one task per area, linked by dependencies;
   - prefer thin vertical slices that keep the app working after each task, over "build all layers first".
 - **Dependencies and order:** record which task blocks which, and mark which tasks can run in parallel. Put foundations (schema, contracts, shared components) first.
-- **Area of every task** (one per task): `frontend`, `backend`, `database`, `cloud` (infrastructure, CI/CD, hosting), `assets` (images, icons, sounds, content), `design` (UX/UI design, mockups), `testing`, `docs`. Add another area only if none fits.
+- **Area of every task** (one per task): `frontend`, `backend`, `database`, `cloud` (infrastructure, CI/CD, hosting), `assets` (images, icons, sounds, content), `design` (UX/UI design, mockups), `docs`. Add another area only if none fits.
 
 ## Phase 4: Write the plan document
 
@@ -105,21 +106,13 @@ An existing project without a `docs/development.md` or `CLAUDE.md`: offer to wri
 
 Walk the user through the plan (and these files) and refine them until they are satisfied. Do not create anything on GitHub yet.
 
-## Phase 4.5: Design the test cases
-
-When the user is satisfied with the plan, have the test cases written by someone other than you or the implementers. They are what the coordinator later checks each ticket against, and a ticket closes only when all of them pass.
-1. Launch the **test designer subagent** described in `references/test-cases.md` (once, for the whole plan).
-2. Weigh its output against the rules in that file. Add the tables you accept to the plan's task details, adjusted where needed.
-3. Present to the user: a short coverage summary (cases per task, happy/edge/error counts, tasks with no cases and why), and every **problem** it found, including tasks that hit the 6-case limit and the suggested split: untestable criteria with proposed rewrites, contradictions between tasks, undefined behaviour. Resolve each problem with the user and update the plan.
-
 ## Phase 5: Independent review (once)
 
 When the user confirms the plan is ready for tickets:
 1. Launch **one** subagent with the Agent tool: `subagent_type: "general-purpose"`, `model: "opus"`. It starts with a clean context, so its prompt must contain everything it needs and nothing more:
    - the absolute path of the plan document and of the project;
    - its role: an independent senior reviewer who must not edit any files;
-   - the absolute path of `references/test-cases.md`;
-   - what to check: gaps and missing work, wrong or risky design decisions, tasks too large for one session or too vague to implement without today's conversation, wrong dependencies or ordering, contradictions with the codebase; and the test cases: acceptance criteria without a case, risky behaviour with no case, cases that should be merged or dropped (the rules aim for 2–5 per task, at most 6), cases that test implementation details or are non-deterministic, and cases in different tasks that can't both pass;
+   - what to check: gaps and missing work, wrong or risky design decisions, tasks too large for one session or too vague to implement without today's conversation, wrong dependencies or ordering, contradictions with the codebase, and acceptance criteria that can't be checked without automated tests;
    - what to return: a list of issues (each with severity, location in the plan, and a concrete fix) and a list of improvements, ordered by importance.
 2. Weigh its output yourself: say which points you agree with, which you don't, and why.
 3. Present this to the user and ask for final confirmation, updating the plan with what they accept.
@@ -139,13 +132,13 @@ Default target: GitHub Issues in the project's repo, added to its GitHub Project
   2. push `main`, create `develop` from it and push it;
   3. make `develop` the repo's default branch, so PRs target it and `Closes #<n>` closes issues when a ticket PR merges.
 
-  **The plan goes into the initial commit in its final form,** issue numbers included: implementers and reviewers work in worktrees created from the remote, so they only see what's pushed. So the order is: create the repo, then the labels, milestones and issues, write the issue numbers into the plan, and only then make the initial commit and push.
+  **The plan goes into the initial commit in its final form,** issue numbers included: implementers work in worktrees created from the remote, so they only see what's pushed. So the order is: create the repo, then the labels, milestones and issues, write the issue numbers into the plan, and only then make the initial commit and push.
 - **Existing project:** the plan (and `docs/development.md` or `CLAUDE.md`, if they changed) must also reach the base branch before implementation starts, for the same reason. After the tickets exist and their numbers are in the plan, propose a `docs/` branch with a PR into the base branch as part of the approval below (commit message e.g. `docs: add <feature> plan`).
 - **Milestones:** create one GitHub milestone per release in the plan (new project, or a feature that adds a release), and assign every task to its milestone. Include them in the approval below.
 - **Before creating the first ticket in this session, ask for approval**, showing: the repo and its owner (so the user can confirm once more that it is their personal repo), the GitHub Project (or that one would be created), the labels and milestones to create, the number of epics, stories and tasks, and the commit, push and PR steps that put the plan on the remote (the initial push, or the plan PR). After that approval, create the rest in this session without asking again.
 - Create top-down (epics, then stories, then tasks), so parents exist before children. Link every child to its parent as a sub-issue, and record "blocked by" dependencies.
 - Every issue gets a `type:` label and every task gets one `area:` label (these give each area its colour).
-- Use `references/ticket-template.md` for issue bodies. Copy each task's test cases into its ticket; the ticket is what the implementer reads.
+- Use `references/ticket-template.md` for issue bodies; the ticket is what the implementer reads.
 - After creating them, write the issue numbers back into the plan document's hierarchy. Then do the approved commit and push (the initial push, or the plan PR), and give the user the link to the epic (or the Project board) and a summary table.
 
 Git rules from CLAUDE.md still apply: commits, pushes and PRs happen only as part of the batch the user approved.

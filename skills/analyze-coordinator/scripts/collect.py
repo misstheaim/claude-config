@@ -85,12 +85,15 @@ def cost_of(u, model):
 
 
 def empty_usage():
-    return {"input": 0, "output": 0, "thinking": 0, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0}
+    # thinking stays None until a transcript reports it (subagent transcripts often don't)
+    return {"input": 0, "output": 0, "thinking": None, "cache_write_5m": 0, "cache_write_1h": 0, "cache_read": 0}
 
 
 def add_usage(acc, u):
     for k in acc:
-        acc[k] += u.get(k, 0)
+        v = u.get(k)
+        if v is not None:
+            acc[k] = (acc[k] or 0) + v
 
 
 def sanitize(path):
@@ -100,6 +103,7 @@ def sanitize(path):
 def parse_transcript(path):
     """Summarise one transcript JSONL (main session or subagent)."""
     usage_by_model = defaultdict(empty_usage)
+    thinking_missing = set()  # models with at least one message that doesn't report thinking tokens
     seen_msgs = set()
     calls = []  # per API call: context size (for growth charts)
     t_first = t_last = None
@@ -117,6 +121,7 @@ def parse_transcript(path):
     bash_calls = {}  # tool_use_id -> {ts, cmd, msg}
     results = {}  # tool_use_id -> {ts, text, is_error}
     msg_tools = defaultdict(list)  # assistant message id -> tool_use ids
+    tool_names = {}  # tool_use_id -> tool name
     bad_lines = 0
 
     with open(path, encoding="utf-8") as f:
@@ -146,12 +151,14 @@ def parse_transcript(path):
                     rec = {
                         "input": u.get("input_tokens", 0) or 0,
                         "output": u.get("output_tokens", 0) or 0,
-                        "thinking": (u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0,
+                        "thinking": (u.get("output_tokens_details") or {}).get("thinking_tokens"),
                         "cache_write_5m": w5 or 0,
                         "cache_write_1h": w1 or 0,
                         "cache_read": u.get("cache_read_input_tokens", 0) or 0,
                     }
                     add_usage(usage_by_model[model], rec)
+                    if rec["thinking"] is None:
+                        thinking_missing.add(model)
                     calls.append({
                         "ts": d.get("timestamp"),
                         "context": rec["input"] + rec["cache_read"] + rec["cache_write_5m"] + rec["cache_write_1h"],
@@ -163,6 +170,7 @@ def parse_transcript(path):
                         tool_calls[name] += 1
                         inp = c.get("input") or {}
                         msg_tools[mid].append(c.get("id"))
+                        tool_names[c.get("id")] = name
                         if name in ("Bash", "PowerShell"):
                             bash_calls[c.get("id")] = {"ts": d.get("timestamp"), "cmd": str(inp.get("command") or ""), "msg": mid}
                         if name == "Agent":
@@ -184,11 +192,13 @@ def parse_transcript(path):
                     human_msgs += 1
                 pd = d.get("permissionDecision") or {}
                 src = str(pd.get("source", ""))
-                if src.startswith("user"):
+                content = (d.get("message") or {}).get("content")
+                answered = {tool_names.get(c.get("tool_use_id")) for c in content if isinstance(c, dict)} if isinstance(content, list) else set()
+                # answering an AskUserQuestion also records a user decision, but it's a question, not a permission prompt
+                if src.startswith("user") and "AskUserQuestion" not in answered:
                     perm_prompts += 1
                     if pd.get("decision") == "reject":
                         perm_rejects += 1
-                content = (d.get("message") or {}).get("content")
                 text = content if isinstance(content, str) else json.dumps(content) if content else ""
                 if "[Request interrupted" in text:
                     interrupts += 1
@@ -206,6 +216,8 @@ def parse_transcript(path):
             elif typ == "system" and d.get("subtype") == "compact_boundary":
                 compactions += 1
 
+    for model in thinking_missing:
+        usage_by_model[model]["thinking"] = None  # a partial count would look like a real (too low) number
     total = empty_usage()
     cost = 0.0
     cost_known = True
@@ -309,7 +321,7 @@ def main():
     if not run_log or not os.path.exists(run_log):
         notes.append("No coordinator run log found; analysing transcripts only.")
     if not events:
-        notes.append("No event log (or it's empty): the coordinator's judgments (reviews, triage, escalations, waits, final gates, conflicts, stopped tickets) are missing. Tickets, roles, fix rounds, merges and costs still come from the transcripts.")
+        notes.append("No event log (or it's empty): the coordinator's judgments (reviews and triage if the run had them, escalations, waits, final gates, conflicts, stopped tickets) are missing. Tickets, roles, fix rounds, merges and costs still come from the transcripts.")
     if bad_events:
         notes.append(f"{bad_events} malformed line(s) in the event log were skipped.")
 
@@ -461,9 +473,18 @@ def main():
             if a["role"] == "fixer":
                 t["fix_rounds"] += 1
             elif a["role"] == "implementer":
-                t["fix_rounds"] += a["resumes"]
+                # fix rounds go to fresh implementers now; older runs resumed the original one
+                t["fix_rounds"] += a["resumes"] + 1
+                t["implementers"] = t.get("implementers", 0) + 1
+    impl_ids = {a["agent_id"] for a in agents if a["role"] == "implementer"}
+    returns = Counter((e.get("ticket"), e.get("outcome")) for e in events
+                      if e.get("event") == "agent_return" and any(str(e.get("agent_id") or "?").startswith(i[:8]) for i in impl_ids))
     for n, t in tickets.items():
-        t["fix_rounds"] = max(0, t["fix_rounds"] - esc_by_ticket.get(n, 0))  # resumes that answered questions aren't fix rounds
+        if t.pop("implementers", 0):
+            t["fix_rounds"] -= 1  # the first implementer dispatch is the implementation itself
+        # continuations after a question or an interruption (resumed or fresh) aren't fix rounds
+        not_fixes = max(esc_by_ticket.get(n, 0), returns[(n, "question")]) + returns[(n, "partial")] + returns[(n, "error")]
+        t["fix_rounds"] = max(0, t["fix_rounds"] - not_fixes)
     for mg in merges:
         n = prs.get(mg["pr"])
         if n is not None:
@@ -500,11 +521,12 @@ def main():
     for a in agents:
         if a["role"] == "fixer":
             fix_by["fixer"] += 1
-    fix_by["implementer (resumes)"] = sum(t["fix_rounds"] for t in tickets.values()) - fix_by["fixer"]
+    fix_by["implementer"] = sum(t["fix_rounds"] for t in tickets.values()) - fix_by["fixer"]
     fix_by = +fix_by
     gates = Counter(e.get("result") for e in events if e.get("event") == "final_gate")
     gate_causes = Counter(e.get("cause") for e in events if e.get("event") == "final_gate" and e.get("result") == "fail")
     conflicts = Counter((e.get("kind"), e.get("resolved_by")) for e in events if e.get("event") == "conflict")
+    # reviews and triage: only runs of the full workflow (archived) have them; the light coordinator has no reviewer
     review_paths = Counter(e.get("path") for e in events if e.get("event") == "review")
     triage = Counter()
     for e in events:

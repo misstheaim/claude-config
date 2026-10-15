@@ -9,7 +9,7 @@ Keep it short: it loads into every session. Facts that change often or need deta
 
 ## Stack
 
-- <language, framework, database, hosting, test framework, with versions>
+- <language, framework, database, hosting, with versions>
 
 ## Workflow (must follow)
 
@@ -23,13 +23,12 @@ Keep it short: it loads into every session. Facts that change often or need deta
 ## Plan and tickets
 
 - Plan: `docs/plans/<slug>.md` (decisions, architecture, every task's details).
-- Tickets: GitHub issues in `<OWNER/REPO>`, GitHub Project `<title>`. Each task ticket's test cases must all pass as automated tests before it closes.
+- Tickets: GitHub issues in `<OWNER/REPO>`, GitHub Project `<title>`. No automated tests: tickets close when build and lint pass and their acceptance criteria are met.
 
 ## Conventions
 
-- <project structure: where code, tests and assets go>
+- <project structure: where code and assets go>
 - <architecture rules from the plan's decisions, e.g. "UI never calls the database directly">
-- <test naming and location; test case IDs in test names>
 
 ## Gotchas
 

@@ -90,7 +90,6 @@ Create the labels that don't exist yet (`gh label list -R OWNER/REPO` to check).
 | `area:cloud` | `D93F0B` | Infrastructure, CI/CD, hosting |
 | `area:assets` | `FBCA04` | Images, icons, sounds, content |
 | `area:design` | `E99695` | UX/UI design, mockups |
-| `area:testing` | `006B75` | Test suites, test infrastructure |
 | `area:docs` | `C5DEF5` | Documentation |
 | `hotfix` | `B60205` | Urgent fix to a released version; branches from `main` |
 

@@ -75,6 +75,17 @@ th { color: var(--text-secondary); font-weight: 500; }
 td.num, th.num { text-align: right; }
 .flag { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; }
 .flag .lbl { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); min-width: 64px; }
+.imp { padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.imp:first-child { padding-top: 0; }
+.imp:last-child { border-bottom: 0; padding-bottom: 0; }
+.imp-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.imp p { margin: 6px 0; color: var(--text-secondary); font-size: 14px; }
+.imp dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 14px; }
+.imp dt { color: var(--text-muted); }
+.imp dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase;
+  color: var(--text-secondary); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); flex: none; }
+@media (max-width: 520px) { .imp dl { grid-template-columns: 1fr; } .imp dt { margin-top: 4px; } }
 svg text { fill: var(--text-secondary); font-size: 12px; }
 svg .val { fill: var(--text-primary); }
 """
@@ -187,7 +198,7 @@ def markdown(m, f, html_path):
         ["Cost per merged ticket", money(t["cost_per_merged_ticket"])],
         ["Sessions / subagents", f'{t["sessions"]} / {t["subagents"]}'],
         ["Session time span", f'{t["wall_clock_min"]:.0f} min'],
-        ["Cache hit ratio", f'{(t["cache_hit_ratio"] or 0):.1%}'],
+        ["Cache hit ratio", "-" if t["cache_hit_ratio"] is None else f'{t["cache_hit_ratio"]:.1%}'],
         ["Tokens: input / cache read / cache write / output / thinking",
          f'{tok(u["input"])} / {tok(u["cache_read"])} / {tok(u["cache_write_5m"] + u["cache_write_1h"])} / {tok(u["output"])} / {tok(u["thinking"])}'],
         ["User waits / permission prompts / interrupts", f'{t["user_waits"]} / {t["permission_prompts"]} / {t["interrupts"]}'],
@@ -203,7 +214,7 @@ def markdown(m, f, html_path):
     if m.get("tickets"):
         L += ["## Tickets", "", md_table(["Ticket", "Outcome", "Cycle", "Fix rounds", "Findings", "Escalations", "Cost"],
               [[f"#{n}", v["outcome"] + (f' ({v.get("stop_reason")})' if v.get("stop_reason") else ""),
-                f'{v["cycle_min"]:.0f} min' if v["cycle_min"] is not None else "-", v["fix_rounds"], kv(v["findings"]),
+                f'{v["cycle_min"]:.0f} min' if v["cycle_min"] is not None else "-", v["fix_rounds"], kv(v.get("findings")),
                 v["escalations"], money(v["cost"])] for n, v in m["tickets"].items()]), ""]
     if m.get("agents"):
         L += ["## Subagents", "", md_table(["Agent", "Role", "Ticket", "Model", "Effort", "Calls", "Duration", "Resumes", "Tool errors", "Outcome", "Cost"],
@@ -215,8 +226,8 @@ def markdown(m, f, html_path):
           [[s["session_id"], (s["start"] or "")[:16], s["api_calls"], f'{s["duration_min"] or 0:.0f} min', tok(s["max_context"]),
             s["compactions"], s["human_msgs"], s["permission_prompts"], money(s["cost"])] for s in m["sessions"]]), ""]
     L += ["## Process", "", md_table(["Metric", "Value"], [
-        ["Escalations", kv(ev["escalations"])], ["User waits", kv(ev["user_waits"])], ["Review paths", kv(ev["review_paths"])],
-        ["Findings", kv(ev["findings"])], ["Triage", kv(ev.get("triage"))],
+        ["Escalations", kv(ev["escalations"])], ["User waits", kv(ev["user_waits"])], ["Review paths", kv(ev.get("review_paths"))],
+        ["Findings", kv(ev.get("findings"))], ["Triage", kv(ev.get("triage"))],
         ["Reviewer reject rate", ev.get("reject_rate") if ev.get("reject_rate") is not None else "-"],
         ["Fix rounds by", kv(ev["fix_rounds_by"])], ["Final gates", kv(ev["final_gates"])],
         ["Gate failure causes", kv(ev["final_gate_fail_causes"])], ["Conflicts", kv(ev["conflicts"])]]), ""]
@@ -243,7 +254,7 @@ def main():
         (money(t["cost_per_merged_ticket"]), "Cost per merged ticket"),
         (f'{t["wall_clock_min"]:.0f} min', "Session time span"),
         (str(t["user_waits"] + t["permission_prompts"] + t["interrupts"]), "Human interruptions"),
-        (f'{(t["cache_hit_ratio"] or 0):.0%}', "Cache hit ratio"),
+        ("—" if t["cache_hit_ratio"] is None else f'{t["cache_hit_ratio"]:.0%}', "Cache hit ratio"),
         (str(t["subagents"]), "Subagents"),
     ]
     parts.append('<div class="tiles">' + "".join(f'<div class="card tile"><div class="v">{E(v)}</div><div class="l">{E(l)}</div></div>' for v, l in tiles) + "</div>")
@@ -267,10 +278,15 @@ def main():
         parts.append("</div>")
     if f.get("improvements"):
         order = {"high": 0, "medium": 1, "low": 2}
-        rows = [[E(i.get("priority", "")), f'<b>{E(i.get("title", ""))}</b><div class="ev" style="white-space:normal">{E(i.get("change", ""))}</div>',
-                 E(i.get("where", "")), f'<span style="white-space:normal">{E(i.get("expected_effect", ""))}</span>']
-                for i in sorted(f["improvements"], key=lambda i: order.get(i.get("priority"), 3))]
-        parts.append('<h2>Suggested improvements</h2><div class="card">' + table(["Priority", "Change", "Where", "Expected effect"], rows) + "</div>")
+        prio = {"high": "critical", "medium": "warning", "low": "good"}
+        items = "".join(
+            f'<div class="imp"><div class="imp-head"><span class="pill"><span class="dot" style="background:{STATUS[prio.get(i.get("priority"), "warning")]}"></span>'
+            f'{E(i.get("priority", "?"))}</span><b>{E(i.get("title", ""))}</b></div>'
+            f'<p>{E(i.get("change", ""))}</p>'
+            f'<dl><dt>Where</dt><dd><code>{E(i.get("where", ""))}</code></dd>'
+            f'<dt>Expected effect</dt><dd>{E(i.get("expected_effect", ""))}</dd></dl></div>'
+            for i in sorted(f["improvements"], key=lambda i: order.get(i.get("priority"), 3)))
+        parts.append(f'<h2>Suggested improvements</h2><div class="card">{items}</div>')
 
     # cost
     roles = sorted(m["by_role"].items(), key=lambda kv: -kv[1]["cost"])
@@ -285,7 +301,7 @@ def main():
           tok(v["usage"]["cache_write_5m"] + v["usage"]["cache_write_1h"]), tok(v["usage"]["output"]), tok(v["usage"]["thinking"])] for k, v in roles]
         + [["<b>Total</b>", t["subagents"] + t["sessions"], f'<b>{money(t["cost"])}</b>', tok(u["input"]), tok(u["cache_read"]),
             tok(u["cache_write_5m"] + u["cache_write_1h"]), tok(u["output"]), tok(u["thinking"])]],
-        num_cols=(1, 2, 3, 4, 5, 6, 7)) + f'<p class="muted">{E(m["pricing_note"])}</p></div>')
+        num_cols=(1, 2, 3, 4, 5, 6, 7)) + f'<p class="muted">{E(m["pricing_note"])} Thinking "—" means the transcripts do not report it (usually subagents); the total counts only what was reported.</p></div>')
 
     # tickets
     tickets = m.get("tickets") or {}
@@ -296,7 +312,7 @@ def main():
             ["Ticket", "Outcome", "Cycle", "Fix rounds", "Findings", "Escal.", "Cost"],
             [["#" + E(n), E(v["outcome"] + (f' ({v.get("stop_reason")})' if v.get("stop_reason") else "")),
               f'{v["cycle_min"]:.0f} min' if v["cycle_min"] is not None else "—", v["fix_rounds"],
-              sum(v["findings"].values()), v["escalations"], money(v["cost"])] for n, v in tickets.items()],
+              sum((v.get("findings") or {}).values()), v["escalations"], money(v["cost"])] for n, v in tickets.items()],
             num_cols=(2, 3, 4, 5, 6)) + "</div></div>")
 
     # subagents
@@ -325,7 +341,7 @@ def main():
     rows += [["permission prompts", "user", t["permission_prompts"]], ["user interrupts", "user", t["interrupts"]]]
     parts.append('<h2>Interruptions and process</h2><div class="grid2">')
     parts.append('<div class="card"><h3>Interruptions</h3>' + table(["Kind", "Resolved by", "Count"], rows, num_cols=(2,)) + "</div>")
-    proc = [["Review path", E(kv(ev["review_paths"]))], ["Findings", E(kv(ev["findings"]))],
+    proc = [["Review path", E(kv(ev.get("review_paths")))], ["Findings", E(kv(ev.get("findings")))],
             ["Fix rounds by", E(kv(ev["fix_rounds_by"]))], ["Final gates", E(kv(ev["final_gates"]))],
             ["Gate failure causes", E(kv(ev["final_gate_fail_causes"]))],
             ["Conflicts", E(kv(ev["conflicts"]))], ["Tool errors", t["tool_errors"]],

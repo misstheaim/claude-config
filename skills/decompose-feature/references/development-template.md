@@ -15,7 +15,6 @@
 | Install dependencies | |
 | Build | |
 | Lint | |
-| Test (full suite) | |
 | Run locally | |
 
 <Until the bootstrap task creates the project, these are the planned commands. That task makes them real and updates this table.>
@@ -27,7 +26,7 @@ Git Flow, adapted for a project worked on by Claude sessions.
 | Branch | Purpose | Created from | Merges into | Lives |
 |---|---|---|---|---|
 | `main` | **Released code only.** Starts at the initial commit and changes only when a release or hotfix merges in. Every such merge is tagged `vX.Y.Z`. | — | — | permanently |
-| `develop` | **Integration branch** and the repo's GitHub default branch. Every ticket PR targets it and is tested before merging; it must always build and pass the full test suite. | `main` (initial commit) | `release/*` (by branching off) | permanently |
+| `develop` | **Integration branch** and the repo's GitHub default branch. Every ticket PR targets it and is checked before merging; it must always build and pass lint. | `main` (initial commit) | `release/*` (by branching off) | permanently |
 | `feature/<n>-<slug>`, `fix/…`, `refactor/…`, `docs/…`, `chore/…` | One ticket each | latest `origin/develop` | `develop` (squash) | until merged |
 | `release/<X.Y.Z>` | **Stabilizes one milestone:** bug fixes, version bump and changelog only; no new features | `develop`, once the milestone's tickets are merged | `main` (merge commit + tag), then back into `develop` | until released |
 | `hotfix/<n>-<slug>` | **Urgent fix to the released version** | latest `origin/main` | `main` (merge commit + tag), then `develop` and any open `release/*` | until released |
@@ -83,7 +82,7 @@ Each GitHub milestone is one release:
 ## 6. Hotfix process
 
 1. A ticket labelled `hotfix` describes the bug in the released version.
-2. Branch `hotfix/<n>-<slug>` from the latest `origin/main`. Add a test that reproduces the bug, fix it, bump PATCH, and update `CHANGELOG.md`.
+2. Branch `hotfix/<n>-<slug>` from the latest `origin/main`. Fix the bug, bump PATCH, and update `CHANGELOG.md`.
 3. PR into `main`; merge (merge commit), tag, publish the release.
 4. Merge `main` back into `develop`, and into the open `release/*` branch if there is one.
 
@@ -91,12 +90,12 @@ Each GitHub milestone is one release:
 
 The owner explicitly approves every step that merges into `main` or a `release/*` branch, pushes a tag, publishes a GitHub release or changes repo settings. The coordinator only merges ticket PRs into `develop`.
 
-## 8. Tickets, PRs and tests
+## 8. Tickets and PRs
 
 - One ticket = one branch = one PR into `develop`, with `Closes #<n>` in the body.
-- Ticket test cases (IDs like `T3-TC02`) become automated tests with the ID in the test name. A ticket closes only when all of them pass.
+- No automated tests: a ticket's PR merges when build and lint pass, git is clean, its acceptance criteria are met and it has no conflicts.
 - Branch, commit and PR naming follow the owner's conventions (Conventional Commits, `#<n>` in commit scopes and PR titles).
 
 ## 9. CI
 
-<What runs on PRs into `develop`, `release/*` and `main`. Until CI exists, run the full test suite locally before every merge.>
+<What runs on PRs into `develop`, `release/*` and `main`. Until CI exists, run build and lint locally before every merge.>
