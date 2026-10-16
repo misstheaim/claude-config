@@ -1,6 +1,7 @@
 # Track only portable configuration; everything else (credentials, history, sessions, caches) stays local.
 *
 !.gitignore
+!.gitattributes
 !CLAUDE.md
 !settings.json
 !keybindings.json

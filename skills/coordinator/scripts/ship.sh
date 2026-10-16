@@ -5,10 +5,14 @@
 #   ship.sh --worktree PATH --ticket N --base BRANCH --title "PR title" --body-file FILE \
 #           --gate build="npm --prefix extension run build" --gate lint="cd helper && golangci-lint run" \
 #           [--message "feat(#N): summary"] [--repo OWNER/REPO] [--merge-method squash|merge|rebase] \
-#           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--ci-timeout SEC] [--no-merge]
+#           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge]
 #
-# Idempotent: re-run it after a fix round, a conflict resolution or a CI timeout and it picks up where it stopped
-# (an existing commit, pushed branch or open PR is reused). Run it from the main checkout, not from the worktree.
+# Idempotent: re-run it after a fix round, a conflict resolution, a CI timeout or a killed run and it picks up
+# where it stopped (an existing commit, pushed branch, open PR or already merged PR is reused).
+# Run it from the main checkout, not from the worktree.
+#
+# Time: the whole run stays within --budget seconds (default 540), under the Bash tool's 600 s limit. Waiting for
+# CI stops at the budget with exit 22; nothing is half done then, so a re-run just keeps waiting.
 #
 # Exit codes (the last line printed is always "RESULT: <code> <word> ..."):
 #   0  merged             PR merged, local base fast-forwarded, worktree removed (or reported busy)
@@ -17,7 +21,7 @@
 #   10 gate-failed        a gate command failed, or git isn't clean after the commit (cause: gate name or "dirty")
 #   20 ci-failed          a CI check failed
 #   21 ci-not-registered  the repo has workflows but no check appeared on the PR in time
-#   22 ci-timeout         checks still running; re-run to keep waiting
+#   22 ci-timeout         checks still running when the budget ran out; re-run to keep waiting
 #   30 merge-failed       gh pr merge refused (e.g. GitHub sees a conflict)
 #   40 ready              --no-merge: PR is green and waits for the user's approval
 set -uo pipefail
@@ -26,7 +30,7 @@ die() { echo "RESULT: $1 $2${3:+ $3}"; exit "$1"; }
 log() { echo "ship: $*"; }
 
 WT="" TICKET="" BASE="" TITLE="" BODY="" MSG="" REPO="" METHOD="squash" EVENTS="" RUNLOG="" LOGDIR=""
-REG_TIMEOUT=180 CI_TIMEOUT=480 NO_MERGE=0
+REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0
 GATES=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,7 +47,7 @@ while [ $# -gt 0 ]; do
     --runlog) RUNLOG="$2"; shift 2 ;;
     --logdir) LOGDIR="$2"; shift 2 ;;
     --ci-register-timeout) REG_TIMEOUT="$2"; shift 2 ;;
-    --ci-timeout) CI_TIMEOUT="$2"; shift 2 ;;
+    --budget) BUDGET="$2"; shift 2 ;;
     --no-merge) NO_MERGE=1; shift ;;
     *) die 2 usage "unknown argument: $1" ;;
   esac
@@ -63,11 +67,45 @@ mkdir -p "$LOGDIR"
 BR=$(g symbolic-ref --short HEAD) || die 2 usage "worktree is on a detached HEAD"
 [ "$BR" != "$BASE" ] || die 2 usage "worktree is on the base branch itself"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+left() { echo $((BUDGET - SECONDS)); }  # seconds left of the budget (SECONDS counts from the script's start)
 event() { [ -z "$EVENTS" ] || printf '%s\n' "$1" >> "$EVENTS"; }
 gate_event() { # result cause
   if [ "$1" = pass ]; then event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"pass\",\"cause\":null}"
   else event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"fail\",\"cause\":\"$2\"}"; fi
 }
+
+# After the merge: delete the remote branch, fast-forward the local base, remove the worktree, close the issue.
+cleanup_after_merge() { # pr
+  local pr="$1" clean="worktree removed" state
+  git -C "$MAIN" push -q origin --delete "$BR" 2>/dev/null || true
+  git -C "$MAIN" fetch -q origin "$BASE"
+  if [ "$(git -C "$MAIN" symbolic-ref --short HEAD 2>/dev/null)" = "$BASE" ]; then
+    git -C "$MAIN" merge -q --ff-only "origin/$BASE" || log "WARNING: local $BASE did not fast-forward"
+  else
+    git -C "$MAIN" fetch -q origin "$BASE:$BASE" 2>/dev/null || log "WARNING: local $BASE did not fast-forward"
+  fi
+  if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
+    git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
+  else
+    rm -f "$WT/.scratch/ticket-notes.md"
+    clean="worktree busy, remove later: $WT (ticket notes deleted)"
+  fi
+  state=$(gh issue view "$TICKET" -R "$REPO" --json state -q .state 2>/dev/null)
+  if [ "$state" = "OPEN" ]; then
+    gh issue close "$TICKET" -R "$REPO" -c "Done in PR #$pr" >/dev/null 2>&1 && log "closed issue #$TICKET"
+  fi
+  [ -z "$RUNLOG" ] || printf '%s\n' "- #$TICKET | DONE: PR #$pr merged ($(now)). $clean" >> "$RUNLOG"
+  log "$clean"
+  die 0 merged "#$TICKET -> PR #$pr"
+}
+
+# 0. A previous run may have merged and then been killed before cleaning up: finish only the cleanup.
+MERGED_PR=$(gh pr list -R "$REPO" --head "$BR" --state merged --json number -q '.[0].number' 2>/dev/null)
+if [ -n "$MERGED_PR" ]; then
+  [ -z "$(g status --porcelain)" ] || die 2 usage "PR #$MERGED_PR for $BR is already merged, but the worktree has new changes: ship them on a new branch"
+  log "PR #$MERGED_PR is already merged; finishing the cleanup"
+  cleanup_after_merge "$MERGED_PR"
+fi
 
 # 1. In-progress rebase or merge from an earlier run: the coordinator resolves it first (SKILL.md section 7).
 gdir=$(g rev-parse --git-dir)
@@ -98,6 +136,8 @@ if [ "$(g rev-list --count "HEAD..origin/$BASE")" -gt 0 ]; then
     log "merged origin/$BASE into $BR"
   fi
 fi
+echo "ship: files in this change (vs origin/$BASE):"
+g diff --name-status "origin/$BASE...HEAD" | head -n 40 | sed 's/^/  /'
 
 # 4. Final gate: every gate command from the worktree root, output to a log; then git must be clean.
 for spec in "${GATES[@]}"; do
@@ -139,9 +179,9 @@ if [ $HAS_CI -eq 1 ]; then
     case "$n" in ''|*[!0-9]*) n=0 ;; esac
     [ "$n" -gt 0 ] && break
     [ $waited -ge "$REG_TIMEOUT" ] && die 21 ci-not-registered "PR #$PR has no checks after ${REG_TIMEOUT}s"
+    [ "$(left)" -le 40 ] && die 22 ci-timeout "PR #$PR: time budget used up while waiting for checks to appear; re-run"
     sleep 10; waited=$((waited + 10))
   done
-  waited=0
   while :; do
     buckets=$(gh pr checks "$PR" -R "$REPO" --json bucket -q '.[].bucket' 2>/dev/null)
     if echo "$buckets" | grep -qE '^(fail|cancel)$'; then
@@ -149,8 +189,9 @@ if [ $HAS_CI -eq 1 ]; then
       die 20 ci-failed "PR #$PR"
     fi
     echo "$buckets" | grep -q '^pending$' || break
-    [ $waited -ge "$CI_TIMEOUT" ] && die 22 ci-timeout "PR #$PR checks still running after ${CI_TIMEOUT}s; re-run to keep waiting"
-    sleep 15; waited=$((waited + 15))
+    # keep about 40 s for the merge and the cleanup
+    [ "$(left)" -le 40 ] && die 22 ci-timeout "PR #$PR checks still running after ${SECONDS}s; re-run to keep waiting"
+    sleep 15
   done
   log "CI: $(echo "$buckets" | grep -c '^pass$') passed"
 else
@@ -161,27 +202,7 @@ if [ $NO_MERGE -eq 1 ]; then
   die 40 ready "PR #$PR is green and waits for approval: $(gh pr view "$PR" -R "$REPO" --json url -q .url)"
 fi
 
-# 7. Merge, delete the remote branch, fast-forward the local base, remove the worktree.
+# 7. Merge, then clean up.
 gh pr merge "$PR" -R "$REPO" "--$METHOD" >/dev/null 2>&1 || die 30 merge-failed "gh pr merge refused PR #$PR: $(gh pr view "$PR" -R "$REPO" --json mergeable,mergeStateStatus -q '"\(.mergeable) \(.mergeStateStatus)"')"
 log "merged PR #$PR ($METHOD)"
-git -C "$MAIN" push -q origin --delete "$BR" 2>/dev/null || true
-git -C "$MAIN" fetch -q origin "$BASE"
-if [ "$(git -C "$MAIN" symbolic-ref --short HEAD 2>/dev/null)" = "$BASE" ]; then
-  git -C "$MAIN" merge -q --ff-only "origin/$BASE" || log "WARNING: local $BASE did not fast-forward"
-else
-  git -C "$MAIN" fetch -q origin "$BASE:$BASE" 2>/dev/null || log "WARNING: local $BASE did not fast-forward"
-fi
-CLEAN="worktree removed"
-if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
-  git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
-else
-  rm -f "$WT/.scratch/ticket-notes.md"
-  CLEAN="worktree busy, remove later: $WT (ticket notes deleted)"
-fi
-state=$(gh issue view "$TICKET" -R "$REPO" --json state -q .state 2>/dev/null)
-if [ "$state" = "OPEN" ]; then
-  gh issue close "$TICKET" -R "$REPO" -c "Done in PR #$PR" >/dev/null 2>&1 && log "closed issue #$TICKET"
-fi
-[ -z "$RUNLOG" ] || printf '%s\n' "- #$TICKET | DONE: PR #$PR merged ($(now)). $CLEAN" >> "$RUNLOG"
-log "$CLEAN"
-die 0 merged "#$TICKET -> PR #$PR"
+cleanup_after_merge "$PR"

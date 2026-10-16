@@ -160,8 +160,9 @@ The fresh agent becomes the ticket's owner; update its agent ID in the run log.
 
 Keep this step cheap; don't run anything here, the final gate (§6) runs the build.
 1. **Read its report.** Questions go through §3.
-2. **Basic check:** the report marks every acceptance criterion met (or 🖐 trivial manual), says build and lint are green, lists no open deviation, and `git diff --stat origin/<base>...` touches the files the ticket is about, with no stray files. Skim "Decisions made"; challenge one only if it contradicts the plan or the ticket.
-3. **If something's missing or failing,** start a fix round (§5).
+2. **Basic check:** the report marks every acceptance criterion met (or 🖐 trivial manual), says build and lint are green, and lists no open deviation. Skim "Decisions made"; challenge one only if it contradicts the plan or the ticket.
+3. **Files check:** `git -C <worktree> status --porcelain` (one call). The changes aren't committed yet, so this is the only view of what `ship.sh` will commit: everything listed except `.scratch/`. Every modified (`M`) and untracked (`??`) path must belong to the ticket. Stray files go before shipping: scratch scripts outside `.scratch/` (e.g. `.scratch_edit.py`, `zz*`/`tmp*` folders such as `helper/cmd/zzscratch/`), logs, build output, editor files. Delete clearly throwaway ones yourself (`git -C <worktree> clean -fd -- <path>` for untracked, `git -C <worktree> checkout -- <path>` for unintended edits to tracked files). If you're unsure whether a file is part of the change, ask the implementer in a fix round.
+4. **If something's missing or failing,** start a fix round (§5).
 
 ## 5. Fix rounds
 
@@ -174,7 +175,7 @@ A fix round handles a failed basic check, a failed final gate or a red CI check.
 
 ## 6. Ship it
 
-The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (or deletes the ticket notes when the worktree is busy), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution or a CI timeout, run the same command again.
+The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (or deletes the ticket notes when the worktree is busy), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution, a CI timeout or a killed run, run the same command again. If the PR is already merged (a run killed between the merge and the cleanup), a re-run only finishes the cleanup. The whole run stays within a time budget (`--budget`, default 540 s) below the Bash tool's 600 s limit: waiting for CI stops in time with exit 22 instead of being killed. It also prints the files in the change (vs `origin/<base>`), so you can see what was committed.
 
 1. **One Bash call:** write the PR body file (next to the run log, in `logs/`) and run the script in the same command, with `timeout: 600000`:
 
@@ -189,7 +190,7 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    ```
 
    - Commit message, PR title and template follow the user's conventions. There's one `--gate name=command` per workflow command; each runs from the worktree root, so use `cd <dir> && …` or `--prefix` inside it. Name them `build` and `lint` (several of one kind: `build`, `build`, …), because the name becomes the `final_gate` event's `cause`.
-   - Run it from the main checkout. Before calling, check every non-mechanical condition in "When a ticket is done" (the implementer's report, §4); the script checks the rest.
+   - Run it from the main checkout, only after the basic and files checks (§4) passed; the script checks the rest of "When a ticket is done". If the printed file list still shows a stray file, don't let it merge unnoticed: fix it in a fix round (it reached the PR, so the next commit removes it).
    - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): add `--no-merge`. The script stops at a green PR (exit 40). Show it to the user with the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, run it again without `--no-merge` (with that branch's merge method) and do the approved steps. Tags and releases need their own explicit approval in that same request.
 2. **Act on the last line**, `RESULT: <code> <word> …`:
 
@@ -200,7 +201,7 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    | 10 `gate-failed` | a gate (named, with a log tail) failed, or git is dirty | Fix round (§5), then re-run. |
    | 20 `ci-failed` | a check failed (names and links printed) | Fix round (§5) or stop and ask, then re-run. |
    | 21 `ci-not-registered` | workflows exist, but no check appeared | Look at the PR's Actions tab (`gh run list`); re-run once. If it's still missing, stop and ask. Never merge by hand. |
-   | 22 `ci-timeout` | checks still running | Re-run. |
+   | 22 `ci-timeout` | checks still running when the time budget ran out (nothing half done) | Re-run; it reuses the PR and keeps waiting. After 3 timeouts in a row, check the run (`gh run list`) and stop and ask if it's stuck. |
    | 30 `merge-failed` | GitHub refused the merge | Usually a conflict that just landed on the base: re-run (it merges `origin/<base>` into the branch and goes through the gate again), or resolve as in §7. |
    | 40 `ready` | `--no-merge`: green PR waiting for approval | See above. |
    | 2 `usage` | bad arguments or nothing to ship | Fix the call. |
@@ -254,12 +255,19 @@ Before the handoff, one subagent checks that what this wave merged actually work
 
 - **When:** after the wave's last ticket merges or stops, once per wave. **Skip it** only when the merged tickets changed nothing that runs (docs, plan, specs or CI config only), or nothing merged. Log the skip with its reason.
 - **What it checks:** for each ticket merged in this wave, the user-visible result of its acceptance criteria. New UI elements (views, panels, menus, commands, settings, status items, pages) are present and respond. New CLI commands, endpoints or hooks run and return what they should. The product starts without errors. It also re-runs, briefly, what the harness already covers from earlier waves, as a regression pass.
-- **Where:** the smoke worktree `<repo>/.claude/worktrees/smoke`, detached at `origin/<base>` after the wave's merges. If it already exists, run `git -C <path> checkout --detach origin/<base>`; otherwise create it with `git worktree add --detach <path> origin/<base>`. Keep it for the next wave. The **harness** (scripts, a README on how to run them, its own `package.json` or similar) lives in `<git-common-dir>/coordinator/smoke-harness/`. That folder isn't committed, is shared by every worktree, and grows from wave to wave.
-- **Dispatch:** `subagent_type: "general-purpose"`, `model: "sonnet"`, `effort: "medium"`, **no isolation** (worktree isolation would refuse the harness folder, and auto-cleanup would throw the harness away). The prompt starts with `Smoke check wave <N>:` and gives:
-  - the smoke worktree path, the harness path, and the project's run commands from the workflow (e.g. the "Run locally" row of `docs/development.md`);
+- **Where:** its own worktree, `<repo>/.claude/worktrees/smoke`, detached at `origin/<base>` after the wave's merges. Prepare it with one call: `bash <skill-dir>/scripts/smoke-worktree.sh --base <base>`. The script creates the worktree on first use and resets it on later waves (tracked files back to `origin/<base>`; `node_modules` and build output stay, so later waves start faster). It also records the main checkout's state and prints `SMOKE_WORKTREE`, `SMOKE_HARNESS` and `SMOKE_AT` (the commit under test). The **harness** (scripts, a README on how to run them, its own `package.json` or similar) lives in `<git-common-dir>/coordinator/smoke-harness/`. That folder isn't committed, is shared by every worktree, and grows from wave to wave.
+- **Dispatch:** `subagent_type: "general-purpose"`, `model: "sonnet"`, `effort: "medium"`, **no isolation** (worktree isolation would refuse the harness folder, and auto-cleanup would throw the harness away). The worktree, the rules and the check afterwards replace the isolation. The prompt starts with `Smoke check wave <N>:` and gives:
+  - the smoke worktree path and the commit under test, the harness path, and the project's run commands from the workflow (e.g. the "Run locally" row of `docs/development.md`);
   - each merged ticket in one or two lines: what changed and what to check, taken from its PR and acceptance criteria;
-  - the rules: work only in the smoke worktree, the harness folder and temp dirs; never edit tracked files, commit, push or open PRs; never touch the user's real config or home (use temp dirs, e.g. a temp `HOME`, `CLAUDE_CONFIG_DIR` or the project's own override such as `COMPOSER_HOME`); don't fix product code, report what's broken instead; extend the harness and keep its README current; keep long output in log files;
+  - the rules:
+    - **first, `cd` into the smoke worktree** and run every command from there, using absolute paths;
+    - work only in the smoke worktree, the harness folder and temp dirs. **The main checkout (`<main checkout path>`) and the ticket worktrees are off limits:** never read from, write to or run git in them;
+    - never commit, push, open PRs or change branches; in the smoke worktree, never edit tracked files (build output and `node_modules` are fine);
+    - never touch the user's real config or home: use temp dirs, e.g. a temp `HOME`, `CLAUDE_CONFIG_DIR` or the project's own override such as `COMPOSER_HOME`;
+    - don't fix product code; report what's broken instead;
+    - extend the harness and keep its README current; keep long output in log files;
   - the report, at most about 40 lines: one line per check, marked `PASS`, `FAIL` or `NOT CHECKABLE` (with why). For each FAIL, steps to reproduce and whether it looks like a product bug or a harness problem. Then the harness changes.
+- **Check the boundary afterwards:** `bash <skill-dir>/scripts/smoke-worktree.sh --verify` (chain it onto your next command). It compares the main checkout with the state recorded before the dispatch. If it prints `CHANGED`, the agent broke its rules. Restore the main checkout (`git checkout -- <path>` for tracked files; remove only files that the diff shows are new), note it in the handoff, and treat that smoke result as unreliable.
 - **Results:**
   - **All pass:** note it in the handoff.
   - **A product bug in code merged during this run:** create a follow-up issue (see "Follow-ups") with the reproduction steps, and list it as an open item for the next session to run first. Don't fix it in this session.
