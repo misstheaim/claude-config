@@ -13,6 +13,13 @@ A tool call of its own costs a full context re-read. So an event never gets its 
 
 Rules: append only, never edit or delete lines; each line valid JSON; every event has `ts` (ISO 8601 UTC) and `event`; leave out fields you don't know. `ticket` is the issue number as an integer.
 
+**Values are exact.** Enum values are lowercase, exactly as listed below (`pass`, never `PASS` or `Pass`). Required fields are never `null` or `""`:
+- `session_start.wave`: the wave this session starts or continues (an integer);
+- `final_gate.cause`: one of the listed causes when `result` is `fail` (`null` only on `pass`);
+- `smoke_check.reason`: when `result` is `skipped`.
+
+A `final_gate` with `result: fail` is followed by another `final_gate` for the same ticket once it passes.
+
 ## Events
 
 | `event` | When | Fields |
@@ -26,9 +33,10 @@ Rules: append only, never edit or delete lines; each line valid JSON; every even
 | `final_gate` | After the final gate, for every ticket that merges | `ticket`, `result`: `pass` / `fail`, `cause` (on fail: `build` / `lint` / `dirty` / `conflict` / `ci`) |
 | `conflict` | Each merge conflict or post-rebase build failure | `ticket`, `kind`: `merge` / `build` (the build breaks only after rebasing onto newly merged work), `resolved_by`: `coordinator` / `user` |
 | `ticket_stopped` | A ticket is handed to the user | `ticket`, `reason`: `fix-rounds` / `failed-twice` / `conflict` / `escalation` / `other` |
+| `smoke_check` | After the wave smoke check (or its skip), chained onto the handoff command | `wave`, `result`: `pass` / `fail` / `skipped`, `failures` (int), `followups` (list of ints), `reason` (on skipped) |
 | `wave_handoff` | At the wave handoff | `wave`, `merged` (list of ints), `open` (list of ints) |
 | `run_finished` | When the scope is done | `merged` (int), `stopped` (int) |
 
 **Required for every merged ticket:** a `final_gate` event. The analyzer reports a merged ticket without it as an incomplete log.
 
-A typical ticket produces one event (`final_gate`), chained onto the gate's command.
+A typical ticket produces one event (`final_gate`), which `scripts/ship.sh` appends itself when called with `--events`.

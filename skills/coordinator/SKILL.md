@@ -1,6 +1,6 @@
 ---
 name: coordinator
-description: Coordinator mode (light), started only manually with /coordinator. Works through a repo's GitHub task tickets one at a time - picks the next unblocked ticket in plan order, has a subagent implement it with the implement-ticket skill in an isolated worktree, and commits, pushes, opens and merges the PR in that one repo once the basic checks pass (build and lint green, clean git, the implementer reports the work done, no conflicts with the base branch), pausing at spikes, concerns and wave ends. No reviewer subagent and no automated tests.
+description: Coordinator mode (light), started only manually with /coordinator. Works through a repo's GitHub task tickets one at a time - picks the next unblocked ticket in plan order, has a subagent implement it with the implement-ticket skill in an isolated worktree, and commits, pushes, opens and merges the PR in that one repo once the basic checks pass (build and lint green, clean git, the implementer reports the work done, no conflicts with the base branch), pausing at spikes, concerns and wave ends, with a throwaway smoke check of each wave's changes before the handoff. No reviewer subagent and no automated tests.
 disable-model-invocation: true
 argument-hint: "[scope: milestone MVP | epic #N | #a,#b,... ] [checkpoint=wave|ticket|none] [repo=OWNER/REPO] [base=BRANCH]"
 ---
@@ -62,6 +62,7 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 - **Dev tools on the machine:** find the toolchain the repo needs (from `docs/development.md`, a README "Requirements" section, or project files such as `package.json`, `go.mod`, `*.csproj`), and check each tool with its version command.
   - **If anything is missing, stop** and give the user the exact install commands. Never install system software yourself: this mode's authority covers only the GitHub repo.
   - Project-level dependencies such as `npm ci` and `go mod download` are fine; the subagents run them as part of their tickets.
+- **Scratch folder ignored:** implementers and the smoke check keep logs and scratch files in `.scratch/` and never touch `.git` themselves. Check `git check-ignore -q .scratch/x`. If it isn't ignored, append `.scratch/` to `$(git rev-parse --git-common-dir)/info/exclude` (local, shared by every worktree, never committed) and note it in the run log.
 - **Base branch:** resolve it (see the arguments) and tell the user which one you'll use.
 - **Empty repo:** if the repo has no commits on its base branch, stop. Ask the user to do the bootstrap ticket first (e.g. with `/implement-ticket`) and push it, so PRs have a base branch.
 - **Starting point:** `git fetch origin <base>`; the local base branch is clean and fast-forwards to `origin/<base>`. If it isn't, stop and ask.
@@ -93,10 +94,10 @@ Each implementer keeps `<worktree>/.scratch/ticket-notes.md`: the ticket's statu
 
 Besides the run log (for you), keep a machine-readable event log for the `analyze-coordinator` skill. Log **only your judgments**; the analyzer reads everything mechanical (dispatches, resumes, PRs, merges, CI, tokens) from the transcripts. The full spec is `references/events.md`; you don't need to read it, the list below is enough.
 
-- **Events:** `session_start` {wave, continuing}, `baseline` {result, known_failures}, `wave_start` {wave, tickets}, `agent_return` {ticket, agent_id, outcome: question/partial/error; only when it's not a finished report}, `escalation` {ticket, kind: business/blocker/destructive/technical, resolved_by: coordinator/user}, `user_wait` {reason, ticket}, `final_gate` {ticket, result, cause}, `conflict` {ticket, kind: merge/build, resolved_by}, `ticket_stopped` {ticket, reason}, `wave_handoff` {wave, merged, open}, `run_finished` {merged, stopped}. Every line also has `ts` (ISO 8601 UTC) and `event`.
-- **Every merged ticket has a `final_gate` event.** Chain it onto the gate's own command (§6, step 3).
+- **Events:** `session_start` {wave, continuing}, `baseline` {result, known_failures}, `wave_start` {wave, tickets}, `agent_return` {ticket, agent_id, outcome: question/partial/error; only when it's not a finished report}, `escalation` {ticket, kind: business/blocker/destructive/technical, resolved_by: coordinator/user}, `user_wait` {reason, ticket}, `final_gate` {ticket, result, cause}, `conflict` {ticket, kind: merge/build, resolved_by}, `ticket_stopped` {ticket, reason}, `smoke_check` {wave, result: pass/fail/skipped, failures, followups, reason}, `wave_handoff` {wave, merged, open}, `run_finished` {merged, stopped}. Every line also has `ts` (ISO 8601 UTC) and `event`.
+- **Every merged ticket has a `final_gate` event.** `ship.sh` appends it when you pass `--events` (§6). Write it yourself only when you ship by hand.
 - **Never spend a tool call on an event.** Chain the append onto a command you run anyway (`… && printf '%s\n' '<json>' >> "$EVENTS"`), or put it in the same message as your next tool call. Events that happen together go in one `printf` with several lines.
-- **Every subagent prompt starts with `Ticket #<n>:`**, so the analyzer can match the subagent to its ticket.
+- **Every ticket subagent's prompt starts with `Ticket #<n>:`**, so the analyzer can match the subagent to its ticket. The smoke check's prompt starts with `Smoke check wave <N>:` instead.
 - Append only; never edit, delete or read the log back.
 
 ### Context hygiene
@@ -173,15 +174,38 @@ A fix round handles a failed basic check, a failed final gate or a red CI check.
 
 ## 6. Ship it
 
-1. Commit only the ticket's changes, with the user's conventions (e.g. `feat(#<n>): <summary>`).
-2. `git fetch origin <base>` and rebase the ticket branch onto `origin/<base>` (it's still unpushed). On conflicts, resolve them as in §7.
-3. **Final gate:** on the rebased branch, run the workflow's build and lint, with output to a log file, and check that `git status --porcelain` is empty. Then check every condition in "When a ticket is done". On failure: a fix round (§5).
-4. Push the branch and open the PR against the base branch (`gh pr create --base <base>`): title `#<n> <Title>`, the user's PR template, `Closes #<n>`. Under "Testing": build and lint results, and the acceptance criteria as the implementer checked them, in a few lines.
-5. If the repo has CI, wait for the checks (`gh pr checks --watch`). If one fails, start a fix round (§5) or stop and ask.
-   - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): stop here. Show the user the green PR and the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, merge with the workflow's method for that branch and do the approved steps. Tags and releases need their own explicit approval in that same request.
-6. Merge with the workflow's merge method and branch deletion (default `gh pr merge --squash --delete-branch`). If GitHub reports a conflict, resolve it as in §7 and retry. Then fast-forward the local base branch and remove the worktree, which also deletes its ticket notes. If the worktree can't be removed, delete `<worktree>/.scratch/ticket-notes.md` yourself. Don't message the ticket's subagents after this.
-   - `Closes #<n>` only closes the issue when the base is the repo's default branch. If the issue is still open after the merge, close it yourself: `gh issue close <n> -R <repo> -c "Done in PR #<m>"`.
-7. Log one line: `✓ #<n> <title> → PR #<m> merged`. Then pick the next ticket (§2).
+The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (or deletes the ticket notes when the worktree is busy), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution or a CI timeout, run the same command again.
+
+1. **One Bash call:** write the PR body file (next to the run log, in `logs/`) and run the script in the same command, with `timeout: 600000`:
+
+   ```bash
+   cat > "$LOGS/pr-<n>.md" <<'EOF'
+   <the user's PR template: Summary, Changes, Testing (build and lint pass in the final gate; the acceptance criteria as the implementer checked them, in a few lines), Ticket: Closes #<n>>
+   EOF
+   bash <skill-dir>/scripts/ship.sh --worktree <path> --ticket <n> --base <base> --repo <owner/repo> \
+     --message "feat(#<n>): <summary>" --title "#<n> <Title>" --body-file "$LOGS/pr-<n>.md" \
+     --gate build="<workflow build command>" --gate lint="<workflow lint command>" \
+     --merge-method <squash|merge|rebase> --events "$EVENTS" --runlog "<run log>"
+   ```
+
+   - Commit message, PR title and template follow the user's conventions. There's one `--gate name=command` per workflow command; each runs from the worktree root, so use `cd <dir> && …` or `--prefix` inside it. Name them `build` and `lint` (several of one kind: `build`, `build`, …), because the name becomes the `final_gate` event's `cause`.
+   - Run it from the main checkout. Before calling, check every non-mechanical condition in "When a ticket is done" (the implementer's report, §4); the script checks the rest.
+   - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): add `--no-merge`. The script stops at a green PR (exit 40). Show it to the user with the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, run it again without `--no-merge` (with that branch's merge method) and do the approved steps. Tags and releases need their own explicit approval in that same request.
+2. **Act on the last line**, `RESULT: <code> <word> …`:
+
+   | Code | Meaning | What you do |
+   |---|---|---|
+   | 0 `merged` | done | Log `✓ #<n> <title> → PR #<m> merged` in your reply and pick the next ticket (§2). Don't message the ticket's subagents after this. |
+   | 3 `conflict` | rebase or merge onto `origin/<base>` stopped, left in progress | Resolve as in §7 (finish with `git rebase --continue` or a merge commit), then re-run. |
+   | 10 `gate-failed` | a gate (named, with a log tail) failed, or git is dirty | Fix round (§5), then re-run. |
+   | 20 `ci-failed` | a check failed (names and links printed) | Fix round (§5) or stop and ask, then re-run. |
+   | 21 `ci-not-registered` | workflows exist, but no check appeared | Look at the PR's Actions tab (`gh run list`); re-run once. If it's still missing, stop and ask. Never merge by hand. |
+   | 22 `ci-timeout` | checks still running | Re-run. |
+   | 30 `merge-failed` | GitHub refused the merge | Usually a conflict that just landed on the base: re-run (it merges `origin/<base>` into the branch and goes through the gate again), or resolve as in §7. |
+   | 40 `ready` | `--no-merge`: green PR waiting for approval | See above. |
+   | 2 `usage` | bad arguments or nothing to ship | Fix the call. |
+
+If the script can't be used (it's missing, or the project needs a step it doesn't cover), do the same steps by hand in this order, with the same rules.
 
 ## 7. Merge conflicts
 
@@ -191,32 +215,62 @@ Try to resolve them yourself before involving anyone.
    - **Already pushed** (the PR exists): merge `origin/<base>` into the ticket branch, commit the merge, and push normally. Never rebase a pushed branch, since that needs a force-push.
 2. **Understand both sides:** this ticket's change and its intent, and the change on the base branch (`git log -p origin/<base>` and the merged PR and ticket behind it).
 3. **Resolve** so that **both** intents survive: combine the changes rather than taking one side, and regenerate generated files (lockfiles, migration snapshots, generated clients) with the project's tools instead of hand-merging them. If combining them needs real code changes beyond the conflict hunks, give that to a fresh implementer as a fix round, with both intents.
-4. **Re-run the final gate** (§6, step 3) and mention the resolution in the PR.
+4. **Re-run `ship.sh`** (§6), which runs the final gate again, and mention the resolution in the PR.
 
 **Stop and ask the user** when keeping both intents is impossible and one behaviour has to win, or the build still fails after a resolution and the cause isn't clear.
 
 ## 8. Checkpoints and reporting
 
-- **End of every wave, in every checkpoint mode: hand off and end the session.** A coordinator's context grows with every ticket, and each turn re-sends all of it, so a fresh session per wave is much cheaper. After the last ticket of a wave merges:
-  1. write the wave handoff into the run log (see "Run log");
-  2. post the wave summary below;
-  3. end with this message, filled in, and stop:
+- **End of a wave: continue or hand off.** A coordinator's context grows with every ticket (about 10-15k each, on a base of about 60k), and each turn re-sends all of it. A fresh session costs a little to start, but its turns are cheaper. So small waves share a session and a big context hands off. After the last ticket of a wave merges (or stops), first run the wave smoke check (below). Then decide:
+  - **Continue in this session** with the next wave only when **all** of these hold:
+    - this session's tickets so far plus the next wave's tickets add up to **5 or fewer** (a proxy for staying under about 150k context, since you can't read your own token count);
+    - no compaction has happened in this session;
+    - no user decision is pending, and the next wave has no spike or hard gate;
+    - the user didn't ask for a handoff.
 
-     > **Wave <N> is finished.** To keep token use low, clear this session with `/clear`, then run `/coordinator <the same arguments>` to start wave <N+1> (<k> tickets). The new session continues from the run log. <Anything to decide first, if there is.> If you have feedback first (a revert, follow-up tickets, plan changes), tell me before clearing and I'll record it for the next session.
+    Then write a short wave entry into the run log (the waves done, `origin/<base>`'s commit, the smoke check result), post the wave summary, append `wave_handoff` and the next `wave_start` in one command, then go on to the next wave:
+    - with `checkpoint=wave` or `checkpoint=ticket`, first ask in one line: "Continue with wave <N+1> (<k> tickets) here? Otherwise `/clear` and run `/coordinator <args>`." (a `user_wait` with reason `checkpoint`);
+    - with `checkpoint=none`, pick the next ticket (§2) right away.
+  - **Otherwise, hand off and end the session:**
+    1. write the wave handoff into the run log (see "Run log");
+    2. post the wave summary below;
+    3. end with this message, filled in, and stop:
 
-  If the user replies with feedback or decisions, write them into the run log as open items (the next session applies them first), confirm in one line, and repeat the `/clear` instruction. Don't start the next wave in this session.
+       > **Wave <N> is finished.** To keep token use low, clear this session with `/clear`, then run `/coordinator <the same arguments>` to start wave <N+1> (<k> tickets). The new session continues from the run log. <Anything to decide first, if there is.> If you have feedback first (a revert, follow-up tickets, plan changes), tell me before clearing and I'll record it for the next session.
+
+  If the user replies with feedback or decisions, write them into the run log as open items (the next session applies them first), confirm in one line, and repeat the `/clear` instruction. Don't start the next wave in this session once you've handed off.
 - **The wave summary** includes:
   - the merged PRs with links and what each changed, one line each;
   - fix rounds, conflicts resolved, deviations and follow-up issues;
+  - the smoke check result: passed, failed (with the follow-ups) or skipped (why), and what it couldn't check;
   - what the next wave contains;
   - **milestones ready for release:** when the last open ticket of a milestone merges, say so, and list the release steps from the project workflow. Don't run them; they need the user's approval.
-- **`checkpoint=wave`** (default): pauses only at the wave handoff, hard gates and concerns. **`checkpoint=ticket`:** also pause after every merge. **`checkpoint=none`:** no extra pauses inside a wave; the wave handoff still ends the session.
+- **`checkpoint=wave`** (default): pauses only at wave ends, hard gates and concerns. **`checkpoint=ticket`:** also pause after every merge. **`checkpoint=none`:** no extra pauses; at a wave end it continues without asking when the rule above allows, and otherwise hands off.
 - **Follow-ups:** problems outside a ticket's scope become new issues (type `task`, the right `area` label, linked to the same story) only if the user agreed, or if they're clearly bugs in code merged during this run. List them in the summary.
+
+### Wave smoke check
+
+Before the handoff, one subagent checks that what this wave merged actually works when the product runs. It's a **smoke check, not a test suite**: a short happy-path pass that the new pieces are there and do their main job. It doesn't cover edge cases, add tests to the repo or commit anything, so it stays within the light workflow.
+
+- **When:** after the wave's last ticket merges or stops, once per wave. **Skip it** only when the merged tickets changed nothing that runs (docs, plan, specs or CI config only), or nothing merged. Log the skip with its reason.
+- **What it checks:** for each ticket merged in this wave, the user-visible result of its acceptance criteria. New UI elements (views, panels, menus, commands, settings, status items, pages) are present and respond. New CLI commands, endpoints or hooks run and return what they should. The product starts without errors. It also re-runs, briefly, what the harness already covers from earlier waves, as a regression pass.
+- **Where:** the smoke worktree `<repo>/.claude/worktrees/smoke`, detached at `origin/<base>` after the wave's merges. If it already exists, run `git -C <path> checkout --detach origin/<base>`; otherwise create it with `git worktree add --detach <path> origin/<base>`. Keep it for the next wave. The **harness** (scripts, a README on how to run them, its own `package.json` or similar) lives in `<git-common-dir>/coordinator/smoke-harness/`. That folder isn't committed, is shared by every worktree, and grows from wave to wave.
+- **Dispatch:** `subagent_type: "general-purpose"`, `model: "sonnet"`, `effort: "medium"`, **no isolation** (worktree isolation would refuse the harness folder, and auto-cleanup would throw the harness away). The prompt starts with `Smoke check wave <N>:` and gives:
+  - the smoke worktree path, the harness path, and the project's run commands from the workflow (e.g. the "Run locally" row of `docs/development.md`);
+  - each merged ticket in one or two lines: what changed and what to check, taken from its PR and acceptance criteria;
+  - the rules: work only in the smoke worktree, the harness folder and temp dirs; never edit tracked files, commit, push or open PRs; never touch the user's real config or home (use temp dirs, e.g. a temp `HOME`, `CLAUDE_CONFIG_DIR` or the project's own override such as `COMPOSER_HOME`); don't fix product code, report what's broken instead; extend the harness and keep its README current; keep long output in log files;
+  - the report, at most about 40 lines: one line per check, marked `PASS`, `FAIL` or `NOT CHECKABLE` (with why). For each FAIL, steps to reproduce and whether it looks like a product bug or a harness problem. Then the harness changes.
+- **Results:**
+  - **All pass:** note it in the handoff.
+  - **A product bug in code merged during this run:** create a follow-up issue (see "Follow-ups") with the reproduction steps, and list it as an open item for the next session to run first. Don't fix it in this session.
+  - **The product doesn't start at all:** create the follow-up as above, and also call it out first in the handoff message.
+  - **Unconfirmed or harness-only problems:** list them under "open items" in the handoff, without a ticket. The user decides.
+- **Log it:** the result, the harness changes and what couldn't be checked go into the wave handoff in the run log, plus one `smoke_check` event chained onto the handoff's command.
 
 ## 9. Stop when
 
 - the scope is done: append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
-- a wave is finished: hand off as in §8;
+- a wave is finished and §8's rule says hand off;
 - the user interrupts or asks to stop;
 - the same ticket has failed twice, or used up its fix rounds;
 - nothing ready remains because everything left is blocked by gates or concerns. Report what's waiting on the user.

@@ -41,11 +41,44 @@ ROLE_BY_AGENT_TYPE = {
 TICKET_RE = re.compile(r"Ticket #(\d+)|issue #(\d+)|#(\d+)")
 
 
+TICKET_PREFIX_RE = re.compile(r"\s*Ticket #(\d+):")
+
+
 def ticket_from(text):
     m = TICKET_RE.search(text or "")
     if not m:
         return None
     return int(next(g for g in m.groups() if g))
+
+
+def is_coordinator_session(path, event_agent_ids):
+    """A session that ran /coordinator itself, or dispatched an agent the event log names.
+
+    Only the session's own command lines and Agent results count: an analysis or improvement session that merely
+    mentions /coordinator or prints agent ids from the event log is not a coordinator session."""
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if '"user"' not in line:
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("type") != "user":
+                continue
+            content = (d.get("message") or {}).get("content")
+            if isinstance(content, str) and "<command-name>/coordinator</command-name>" in content:
+                return True
+            tur = d.get("toolUseResult")
+            if isinstance(tur, dict) and tur.get("agentId") in event_agent_ids:
+                return True
+    return False
+
+
+def is_smoke(call):
+    """The coordinator's wave smoke check: prompt starts with 'Smoke check wave <N>:' (older runs: 'smoke' in the description)."""
+    prompt = (call.get("prompt") or "").lstrip().lower()
+    return prompt.startswith("smoke check") or "smoke" in (call.get("description") or "").lower()
 
 
 def minutes(a, b):
@@ -105,6 +138,7 @@ def parse_transcript(path):
     usage_by_model = defaultdict(empty_usage)
     thinking_missing = set()  # models with at least one message that doesn't report thinking tokens
     seen_msgs = set()
+    msg_usage = {}  # message id -> {model, ts, rec}, in first-seen order
     calls = []  # per API call: context size (for growth charts)
     t_first = t_last = None
     tool_calls = Counter()
@@ -140,8 +174,9 @@ def parse_transcript(path):
                 m = d.get("message", {})
                 mid = m.get("id") or d.get("requestId") or d.get("uuid")
                 model = m.get("model")
-                if mid not in seen_msgs and model and model != "<synthetic>":
-                    seen_msgs.add(mid)
+                if model and model != "<synthetic>":
+                    # A message is written once per content block while it streams; output_tokens grows from
+                    # record to record, so keep the largest value of each field, not the first record.
                     u = m.get("usage") or {}
                     cc = u.get("cache_creation") or {}
                     w5 = cc.get("ephemeral_5m_input_tokens")
@@ -156,14 +191,14 @@ def parse_transcript(path):
                         "cache_write_1h": w1 or 0,
                         "cache_read": u.get("cache_read_input_tokens", 0) or 0,
                     }
-                    add_usage(usage_by_model[model], rec)
-                    if rec["thinking"] is None:
-                        thinking_missing.add(model)
-                    calls.append({
-                        "ts": d.get("timestamp"),
-                        "context": rec["input"] + rec["cache_read"] + rec["cache_write_5m"] + rec["cache_write_1h"],
-                        "model": model,
-                    })
+                    if mid not in seen_msgs:
+                        seen_msgs.add(mid)
+                        msg_usage[mid] = {"model": model, "ts": d.get("timestamp"), "rec": rec}
+                    else:
+                        old = msg_usage[mid]["rec"]
+                        for k, v in rec.items():
+                            if v is not None and (old[k] is None or v > old[k]):
+                                old[k] = v
                 for c in m.get("content") or []:
                     if isinstance(c, dict) and c.get("type") == "tool_use":
                         name = c.get("name", "?")
@@ -199,8 +234,11 @@ def parse_transcript(path):
                     perm_prompts += 1
                     if pd.get("decision") == "reject":
                         perm_rejects += 1
-                text = content if isinstance(content, str) else json.dumps(content) if content else ""
-                if "[Request interrupted" in text:
+                # a real interrupt is the user turn's own text; the marker inside tool results (code, logs, reports) isn't one
+                texts = [content] if isinstance(content, str) else [
+                    b.get("text") or "" for b in content if isinstance(b, dict) and b.get("type") == "text"
+                ] if isinstance(content, list) else []
+                if any(t.lstrip().startswith("[Request interrupted") for t in texts):
                     interrupts += 1
                 if isinstance(content, list):
                     for b in content:
@@ -216,6 +254,16 @@ def parse_transcript(path):
             elif typ == "system" and d.get("subtype") == "compact_boundary":
                 compactions += 1
 
+    for mu in msg_usage.values():
+        model, rec = mu["model"], mu["rec"]
+        add_usage(usage_by_model[model], rec)
+        if rec["thinking"] is None:
+            thinking_missing.add(model)
+        calls.append({
+            "ts": mu["ts"],
+            "context": rec["input"] + rec["cache_read"] + rec["cache_write_5m"] + rec["cache_write_1h"],
+            "model": model,
+        })
     for model in thinking_missing:
         usage_by_model[model]["thinking"] = None  # a partial count would look like a real (too low) number
     total = empty_usage()
@@ -341,10 +389,7 @@ def main():
                 notes.append(f"Session {sid} not found.")
     elif os.path.isdir(proj_dir):
         for f in glob.glob(os.path.join(proj_dir, "*.jsonl")):
-            with open(f, encoding="utf-8") as fh:
-                text = fh.read()
-            is_coord = "<command-name>/coordinator" in text or any(a in text for a in event_agent_ids)
-            if not is_coord:
+            if not is_coordinator_session(f, event_agent_ids):
                 continue
             if window:
                 mtime = dt.datetime.fromtimestamp(os.path.getmtime(f), dt.timezone.utc)
@@ -386,6 +431,10 @@ def main():
                 "effort": call.get("effort"),
                 "resumes": s["send_messages"].get(aid, 0),
                 "prompt_ticket": ticket_from(call.get("prompt")),
+                # other agent types (smoke checks, explorers) list ticket numbers without belonging to one:
+                # attribute them only through the 'Ticket #<n>:' prefix
+                "prompt_prefix_ticket": int(pm.group(1)) if (pm := TICKET_PREFIX_RE.match(call.get("prompt") or "")) else None,
+                "smoke": is_smoke(call),
                 "dispatched_ts": call.get("ts"),
             })
             for k in ("context_series", "agent_calls", "agent_results", "bash_calls", "results", "msg_tools"):
@@ -404,8 +453,15 @@ def main():
             returns[e["agent_id"]].append(e.get("outcome"))
     for a in agents:
         de = dispatch.get(a["agent_id"], {})
-        a["ticket"] = a.pop("prompt_ticket") if a.get("prompt_ticket") is not None else de.get("ticket")
         a["role"] = ROLE_BY_AGENT_TYPE.get(a["agent_type"] or "") or de.get("role") or a["agent_type"] or "other"
+        smoke = a.pop("smoke", False)
+        if smoke and a["role"] not in ("implementer", "reviewer", "fixer"):
+            a["role"] = "smoke"
+        prompt_ticket, prefix_ticket = a.pop("prompt_ticket", None), a.pop("prompt_prefix_ticket", None)
+        if a["role"] in ("implementer", "reviewer", "fixer", "test-designer"):
+            a["ticket"] = prompt_ticket if prompt_ticket is not None else de.get("ticket")
+        else:
+            a["ticket"] = None if a["role"] == "smoke" else prefix_ticket if prefix_ticket is not None else de.get("ticket")
         a["outcomes"] = returns.get(a["agent_id"], [])
     unmatched = [a["agent_id"] for a in agents if a["ticket"] is None and a["role"] in ("implementer", "reviewer", "fixer")]
     if unmatched:
@@ -523,6 +579,12 @@ def main():
             fix_by["fixer"] += 1
     fix_by["implementer"] = sum(t["fix_rounds"] for t in tickets.values()) - fix_by["fixer"]
     fix_by = +fix_by
+    # tolerate older logs that wrote "PASS" or an empty cause; references/events.md now requires lowercase and a cause
+    for e in events:
+        if e.get("event") == "final_gate":
+            e["result"] = str(e.get("result") or "").lower() or None
+            if e["result"] == "fail" and not e.get("cause"):
+                e["cause"] = "unspecified"
     gates = Counter(e.get("result") for e in events if e.get("event") == "final_gate")
     gate_causes = Counter(e.get("cause") for e in events if e.get("event") == "final_gate" and e.get("result") == "fail")
     conflicts = Counter((e.get("kind"), e.get("resolved_by")) for e in events if e.get("event") == "conflict")
