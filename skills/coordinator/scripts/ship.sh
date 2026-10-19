@@ -98,9 +98,11 @@ pid_alive() { # pid
 # Remove the merged ticket's worktree and local branch; prints what happened. Claude Code locks the worktrees
 # of isolated agents ("claude agent <id> (pid N)"), and a plain remove refuses a locked one: unlock it only when
 # that process has exited. A folder that Windows keeps busy (a process has it open) is left behind once git's
-# record of it is pruned.
+# record of it is pruned. Isolation first creates the worktree on a placeholder branch "worktree-<folder>",
+# which the agent leaves for the ticket branch; it's dropped too once merged into the base.
 remove_worktree() {
   local reason pid
+  git -C "$MAIN" branch -q -d "worktree-$(basename "$WT")" 2>/dev/null || true
   if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
     git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
     echo "worktree removed"; return
