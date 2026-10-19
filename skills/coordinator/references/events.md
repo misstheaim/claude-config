@@ -30,7 +30,7 @@ A `final_gate` with `result: fail` is followed by another `final_gate` for the s
 | `agent_return` | Only when a subagent did **not** return a finished report | `ticket`, `agent_id`, `outcome`: `question` / `partial` (hit maxTurns) / `error` |
 | `escalation` | A question that needed a decision | `ticket`, `kind`: `business` / `blocker` / `destructive` / `technical`, `resolved_by`: `coordinator` / `user` |
 | `user_wait` | You stop and wait for the user | `reason`: `escalation` / `gate` / `concern` / `fable` / `baseline` / `checkpoint`, `ticket` (if any) |
-| `final_gate` | After the final gate, for every ticket that merges | `ticket`, `result`: `pass` / `fail`, `cause` (on fail: `build` / `lint` / `dirty` / `conflict` / `ci`) |
+| `final_gate` | After the final gate, for every ticket that merges | `ticket`, `result`: `pass` / `fail`, `cause` (on fail: `build` / `lint` / `dirty` / `commit` / `conflict` / `ci`) |
 | `conflict` | Each merge conflict or post-rebase build failure | `ticket`, `kind`: `merge` / `build` (the build breaks only after rebasing onto newly merged work), `resolved_by`: `coordinator` / `user` |
 | `ticket_stopped` | A ticket is handed to the user | `ticket`, `reason`: `fix-rounds` / `failed-twice` / `conflict` / `escalation` / `other` |
 | `smoke_check` | After the wave smoke check (or its skip), chained onto the handoff command | `wave`, `result`: `pass` / `fail` / `skipped`, `failures` (int), `followups` (list of ints), `reason` (on skipped) |

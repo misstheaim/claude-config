@@ -44,6 +44,12 @@ fi
 
 [ -n "$BASE" ] || { echo "required: --base"; exit 2; }
 WT="$MAIN/.claude/worktrees/smoke"
+# The smoke worktree persists between waves; keep it (and agent worktrees) out of the main checkout's status,
+# or the next preflight sees an untracked .claude/ and the base no longer looks clean. Local only, never committed.
+if ! git -C "$MAIN" check-ignore -q .claude/worktrees/smoke/x; then
+  mkdir -p "$COMMON/info" && printf '%s\n' '.claude/worktrees/' >> "$COMMON/info/exclude"
+  echo "added .claude/worktrees/ to $COMMON/info/exclude"
+fi
 git -C "$MAIN" fetch -q origin "$BASE" || { echo "git fetch origin $BASE failed"; exit 2; }
 if [ -e "$WT/.git" ]; then
   git -C "$WT" reset -q --hard && git -C "$WT" checkout -q --detach "origin/$BASE" || { echo "could not reset $WT"; exit 2; }

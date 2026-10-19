@@ -19,6 +19,7 @@
 #   2  usage              bad arguments, or nothing to ship
 #   3  conflict           rebase/merge onto origin/<base> stopped on conflicts; left in progress in the worktree
 #   10 gate-failed        a gate command failed, or git isn't clean after the commit (cause: gate name or "dirty")
+#   11 commit-failed      git add/commit failed (a git or setup problem, not the code); its output is printed
 #   20 ci-failed          a CI check failed
 #   21 ci-not-registered  the repo has workflows but no check appeared on the PR in time
 #   22 ci-timeout         checks still running when the budget ran out; re-run to keep waiting
@@ -116,9 +117,19 @@ fi
 
 # 2. Commit the ticket's changes.
 if [ -n "$(g status --porcelain)" ]; then
-  [ -n "$MSG" ] || die 10 gate-failed "dirty: uncommitted changes and no --message"
-  # .scratch/ holds agent logs and ticket notes: never part of a commit, even if it isn't ignored
-  g add -A -- . ':(exclude).scratch' && g commit -q -m "$MSG" || die 10 gate-failed "dirty: commit failed"
+  [ -n "$MSG" ] || die 2 usage "uncommitted changes and no --message"
+  # .scratch/ holds agent logs and ticket notes: never part of a commit, even if it isn't ignored.
+  # When it is ignored, git add rejects the exclude pathspec (exit 1), so only pass it when needed.
+  lf="$LOGDIR/ship-$TICKET-commit.log"
+  pathspec=(-- .)
+  g check-ignore -q .scratch/x || pathspec+=(':(exclude).scratch')
+  { g add -A "${pathspec[@]}" && g commit -q -m "$MSG"; } >"$lf" 2>&1
+  rc=$?
+  if [ $rc -ne 0 ]; then
+    gate_event fail commit
+    echo "--- git add/commit exited $rc; output ($lf):"; tail -n 30 "$lf"
+    die 11 commit-failed "git add/commit exited $rc (log: $lf); nothing to fix in the code"
+  fi
   log "committed: $(g log -1 --format='%h %s')"
 fi
 
