@@ -5,7 +5,9 @@
 #   ship.sh --worktree PATH --ticket N --base BRANCH --title "PR title" --body-file FILE \
 #           --gate build="npm --prefix extension run build" --gate lint="cd helper && golangci-lint run" \
 #           [--message "feat(#N): summary"] [--repo OWNER/REPO] [--merge-method squash|merge|rebase] \
-#           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge]
+#           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge] [--no-close]
+#
+# --no-close: merge but leave the issue open (a "Refs #N" PR, e.g. a plan update for a ticket that isn't done).
 #
 # Idempotent: re-run it after a fix round, a conflict resolution, a CI timeout or a killed run and it picks up
 # where it stopped (an existing commit, pushed branch, open PR or already merged PR is reused).
@@ -31,7 +33,7 @@ die() { echo "RESULT: $1 $2${3:+ $3}"; exit "$1"; }
 log() { echo "ship: $*"; }
 
 WT="" TICKET="" BASE="" TITLE="" BODY="" MSG="" REPO="" METHOD="squash" EVENTS="" RUNLOG="" LOGDIR=""
-REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0
+REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0 NO_CLOSE=0
 GATES=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
     --ci-register-timeout) REG_TIMEOUT="$2"; shift 2 ;;
     --budget) BUDGET="$2"; shift 2 ;;
     --no-merge) NO_MERGE=1; shift ;;
+    --no-close) NO_CLOSE=1; shift ;;
     *) die 2 usage "unknown argument: $1" ;;
   esac
 done
@@ -75,6 +78,50 @@ gate_event() { # result cause
   else event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"fail\",\"cause\":\"$2\"}"; fi
 }
 
+# Is the process with this (OS-level) pid still running? On Windows the lock holds a Windows pid, which
+# Git Bash's kill can't see, so ask tasklist there.
+pid_alive() { # pid
+  if command -v tasklist >/dev/null 2>&1; then
+    MSYS_NO_PATHCONV=1 tasklist /FI "PID eq $1" /NH 2>/dev/null | grep -qw "$1"
+  else
+    kill -0 "$1" 2>/dev/null
+  fi
+}
+
+# Remove the merged ticket's worktree and local branch; prints what happened. Claude Code locks the worktrees
+# of isolated agents ("claude agent <id> (pid N)"), and a plain remove refuses a locked one: unlock it only when
+# that process has exited. A folder that Windows keeps busy (a process has it open) is left behind once git's
+# record of it is pruned.
+remove_worktree() {
+  local reason pid
+  if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
+    git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
+    echo "worktree removed"; return
+  fi
+  reason=$(git -C "$WT" rev-parse --git-dir 2>/dev/null | xargs -I{} cat "{}/locked" 2>/dev/null)
+  if [ -n "$reason" ]; then
+    pid=$(printf '%s' "$reason" | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p')
+    if [ -z "$pid" ] || pid_alive "$pid"; then
+      rm -f "$WT/.scratch/ticket-notes.md"
+      echo "worktree locked ($reason; holder alive or unknown), remove later: $WT (ticket notes deleted)"; return
+    fi
+    git -C "$MAIN" worktree unlock "$WT" 2>/dev/null
+    if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
+      git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
+      echo "worktree removed (stale lock of pid $pid cleared)"; return
+    fi
+  fi
+  # Remove failed part-way (files in use): drop git's record if the folder is no longer a worktree.
+  git -C "$MAIN" worktree prune 2>/dev/null
+  if git -C "$MAIN" worktree list --porcelain | grep -qxF "worktree $(cd "$WT" 2>/dev/null && pwd -W 2>/dev/null || echo "$WT")"; then
+    rm -f "$WT/.scratch/ticket-notes.md"
+    echo "worktree busy, remove later: $WT (ticket notes deleted)"
+  else
+    git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
+    echo "worktree record pruned and branch deleted; folder busy, delete later: $WT"
+  fi
+}
+
 # After the merge: delete the remote branch, fast-forward the local base, remove the worktree, close the issue.
 cleanup_after_merge() { # pr
   local pr="$1" clean="worktree removed" state
@@ -85,14 +132,9 @@ cleanup_after_merge() { # pr
   else
     git -C "$MAIN" fetch -q origin "$BASE:$BASE" 2>/dev/null || log "WARNING: local $BASE did not fast-forward"
   fi
-  if git -C "$MAIN" worktree remove --force "$WT" 2>/dev/null; then
-    git -C "$MAIN" branch -q -D "$BR" 2>/dev/null || true
-  else
-    rm -f "$WT/.scratch/ticket-notes.md"
-    clean="worktree busy, remove later: $WT (ticket notes deleted)"
-  fi
+  clean=$(remove_worktree)
   state=$(gh issue view "$TICKET" -R "$REPO" --json state -q .state 2>/dev/null)
-  if [ "$state" = "OPEN" ]; then
+  if [ "$state" = "OPEN" ] && [ $NO_CLOSE -eq 0 ]; then
     gh issue close "$TICKET" -R "$REPO" -c "Done in PR #$pr" >/dev/null 2>&1 && log "closed issue #$TICKET"
   fi
   [ -z "$RUNLOG" ] || printf '%s\n' "- #$TICKET | DONE: PR #$pr merged ($(now)). $clean" >> "$RUNLOG"
