@@ -73,6 +73,13 @@ BR=$(g symbolic-ref --short HEAD) || die 2 usage "worktree is on a detached HEAD
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 left() { echo $((BUDGET - SECONDS)); }  # seconds left of the budget (SECONDS counts from the script's start)
 event() { [ -z "$EVENTS" ] || printf '%s\n' "$1" >> "$EVENTS"; }
+# CI state from the checks' buckets (one per line): failed, green, or wait. Green only when the read returned
+# checks and every one passed or was skipped; an empty or failed read (GitHub can briefly return nothing) waits.
+checks_state() { # buckets
+  if printf '%s\n' "$1" | grep -qE '^(fail|cancel)$'; then echo failed
+  elif [ -n "$1" ] && ! printf '%s\n' "$1" | grep -qvE '^(pass|skipping)$'; then echo green
+  else echo wait; fi
+}
 gate_event() { # result cause
   if [ "$1" = pass ]; then event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"pass\",\"cause\":null}"
   else event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"fail\",\"cause\":\"$2\"}"; fi
@@ -237,11 +244,12 @@ if [ $HAS_CI -eq 1 ]; then
   done
   while :; do
     buckets=$(gh pr checks "$PR" -R "$REPO" --json bucket -q '.[].bucket' 2>/dev/null)
-    if echo "$buckets" | grep -qE '^(fail|cancel)$'; then
-      gh pr checks "$PR" -R "$REPO" --json name,bucket,link -q '.[] | select(.bucket=="fail" or .bucket=="cancel") | "\(.name): \(.link)"'
-      die 20 ci-failed "PR #$PR"
-    fi
-    echo "$buckets" | grep -q '^pending$' || break
+    case "$(checks_state "$buckets")" in
+      failed)
+        gh pr checks "$PR" -R "$REPO" --json name,bucket,link -q '.[] | select(.bucket=="fail" or .bucket=="cancel") | "\(.name): \(.link)"'
+        die 20 ci-failed "PR #$PR" ;;
+      green) break ;;
+    esac
     # keep about 40 s for the merge and the cleanup
     [ "$(left)" -le 40 ] && die 22 ci-timeout "PR #$PR checks still running after ${SECONDS}s; re-run to keep waiting"
     sleep 15
