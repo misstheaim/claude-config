@@ -1,6 +1,7 @@
 ---
 name: implement-ticket
 description: Implement one existing ticket (GitHub issue, or a Jira-style ticket the session can read) end to end in the current repo - read it, check it's unblocked, create the branch, implement, check the build, lint and acceptance criteria, and stop before committing with a report. No automated tests. Use when the user asks to implement, work on, pick up or start a specific ticket or issue, e.g. "implement #46", "work on issue 12", "start PROJ-123", and when a coordinator dispatches a ticket to a subagent. Do NOT use for creating, writing or decomposing tickets, for bugs with no ticket, or for reviewing someone else's PR.
+disable-model-invocation: true
 argument-hint: "<ticket: #46 | 46 | issue URL | PROJ-123> [--autonomous] [extra instructions]"
 ---
 

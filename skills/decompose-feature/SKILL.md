@@ -1,6 +1,7 @@
 ---
 name: decompose-feature
 description: PERSONAL PROJECTS ONLY. Decompose a new project or a feature into a hierarchy (epics, stories, session-sized tasks) with a plan document and GitHub tickets; a new project also gets its docs/development.md (Git Flow branching, releases) and CLAUDE.md. No test cases or automated tests are planned. Large features get the full process; small features (about 3 tasks or fewer) take a light path that still discusses the design with the user, updates the plan and creates the tickets, but skips the heavy analysis and the reviewer subagent. Use when the user asks to decompose, break down, plan into tickets or add a new feature to a project's plan, and only for the user's personal projects (their own GitHub account), never for enterprise or company work. Do NOT use for editing an existing ticket, for bug reports, or for implementing a task.
+disable-model-invocation: true
 argument-hint: "[feature or project description]"
 ---
 
