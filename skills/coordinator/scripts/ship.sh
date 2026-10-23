@@ -6,12 +6,16 @@
 #           --gate build="npm --prefix extension run build" --gate lint="cd helper && golangci-lint run" \
 #           [--message "feat(#N): summary"] [--repo OWNER/REPO] [--merge-method squash|merge|rebase] \
 #           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge] [--no-close]
+#   ship.sh --worktree PATH --doc NAME --base BRANCH --title ... --body-file FILE --message ... [same options; --gate optional]
 #
+# --doc NAME: a docs PR with no ticket (e.g. the spec update "spec-wave-3"): no issue to close, no events, gates
+#   optional; NAME labels the logs, the run log line and the result.
 # --no-close: merge but leave the issue open (a "Refs #N" PR, e.g. a plan update for a ticket that isn't done).
 # --events: append the final_gate event after the gate and a merged event right after the merge.
 #
 # Idempotent: re-run it after a fix round, a conflict resolution, a CI timeout or a killed run and it picks up
-# where it stopped (an existing commit, pushed branch, open PR or already merged PR is reused).
+# where it stopped (an existing commit, pushed branch, open PR or already merged PR is reused). Gates that already
+# passed on the same commit (e.g. before a --no-merge stop) aren't run again.
 # Run it from the main checkout, not from the worktree.
 #
 # Time: the whole run stays within --budget seconds (default 540), under the Bash tool's 600 s limit. Waiting for
@@ -33,13 +37,14 @@ set -uo pipefail
 die() { echo "RESULT: $1 $2${3:+ $3}"; exit "$1"; }
 log() { echo "ship: $*"; }
 
-WT="" TICKET="" BASE="" TITLE="" BODY="" MSG="" REPO="" METHOD="squash" EVENTS="" RUNLOG="" LOGDIR=""
+WT="" TICKET="" DOC="" BASE="" TITLE="" BODY="" MSG="" REPO="" METHOD="squash" EVENTS="" RUNLOG="" LOGDIR=""
 REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0 NO_CLOSE=0
 GATES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --worktree) WT="$2"; shift 2 ;;
     --ticket) TICKET="$2"; shift 2 ;;
+    --doc) DOC="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --title) TITLE="$2"; shift 2 ;;
     --body-file) BODY="$2"; shift 2 ;;
@@ -57,8 +62,12 @@ while [ $# -gt 0 ]; do
     *) die 2 usage "unknown argument: $1" ;;
   esac
 done
-[ -n "$WT" ] && [ -n "$TICKET" ] && [ -n "$BASE" ] && [ -n "$TITLE" ] && [ -n "$BODY" ] && [ ${#GATES[@]} -gt 0 ] \
-  || die 2 usage "required: --worktree --ticket --base --title --body-file and at least one --gate"
+{ [ -n "$TICKET" ] || [ -n "$DOC" ]; } && { [ -z "$TICKET" ] || [ -z "$DOC" ]; } \
+  || die 2 usage "give exactly one of --ticket N and --doc NAME"
+[ -n "$WT" ] && [ -n "$BASE" ] && [ -n "$TITLE" ] && [ -n "$BODY" ] && { [ ${#GATES[@]} -gt 0 ] || [ -n "$DOC" ]; } \
+  || die 2 usage "required: --worktree --base --title --body-file, and at least one --gate for a ticket"
+NAME="${DOC:-$TICKET}"        # labels log files
+REF="${DOC:-#$TICKET}"        # labels the run log line and the result
 [ -d "$WT" ] || die 2 usage "worktree not found: $WT"
 [ -f "$BODY" ] || die 2 usage "body file not found: $BODY"
 case "$METHOD" in squash|merge|rebase) ;; *) die 2 usage "bad --merge-method: $METHOD" ;; esac
@@ -82,10 +91,12 @@ checks_state() { # buckets
   else echo wait; fi
 }
 gate_event() { # result cause
+  [ -z "$DOC" ] || return 0
   if [ "$1" = pass ]; then event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"pass\",\"cause\":null}"
   else event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"fail\",\"cause\":\"$2\"}"; fi
 }
 merged_event() { # pr [ts]; refs: a --no-close PR, the issue stays open
+  [ -z "$DOC" ] || return 0
   local refs=false; [ $NO_CLOSE -eq 0 ] || refs=true
   event "{\"ts\":\"${2:-$(now)}\",\"event\":\"merged\",\"ticket\":$TICKET,\"pr\":$1,\"refs\":$refs}"
 }
@@ -147,13 +158,13 @@ cleanup_after_merge() { # pr
     git -C "$MAIN" fetch -q origin "$BASE:$BASE" 2>/dev/null || log "WARNING: local $BASE did not fast-forward"
   fi
   clean=$(remove_worktree)
-  state=$(gh issue view "$TICKET" -R "$REPO" --json state -q .state 2>/dev/null)
-  if [ "$state" = "OPEN" ] && [ $NO_CLOSE -eq 0 ]; then
+  [ -n "$DOC" ] || state=$(gh issue view "$TICKET" -R "$REPO" --json state -q .state 2>/dev/null)
+  if [ -z "$DOC" ] && [ "$state" = "OPEN" ] && [ $NO_CLOSE -eq 0 ]; then
     gh issue close "$TICKET" -R "$REPO" -c "Done in PR #$pr" >/dev/null 2>&1 && log "closed issue #$TICKET"
   fi
-  [ -z "$RUNLOG" ] || printf '%s\n' "- #$TICKET | DONE: PR #$pr merged ($(now)). $clean" >> "$RUNLOG"
+  [ -z "$RUNLOG" ] || printf '%s\n' "- $REF | DONE: PR #$pr merged ($(now)). $clean" >> "$RUNLOG"
   log "$clean"
-  die 0 merged "#$TICKET -> PR #$pr"
+  die 0 merged "$REF -> PR #$pr"
 }
 
 # 0. A previous run may have merged and then been killed before cleaning up: finish only the cleanup.
@@ -178,7 +189,7 @@ if [ -n "$(g status --porcelain)" ]; then
   [ -n "$MSG" ] || die 2 usage "uncommitted changes and no --message"
   # .scratch/ holds agent logs and ticket notes: never part of a commit, even if it isn't ignored.
   # When it is ignored, git add rejects the exclude pathspec (exit 1), so only pass it when needed.
-  lf="$LOGDIR/ship-$TICKET-commit.log"
+  lf="$LOGDIR/ship-$NAME-commit.log"
   pathspec=(-- .)
   g check-ignore -q .scratch/x || pathspec+=(':(exclude).scratch')
   { g add -A "${pathspec[@]}" && g commit -q -m "$MSG"; } >"$lf" 2>&1
@@ -209,22 +220,33 @@ echo "ship: files in this change (vs origin/$BASE):"
 g diff --name-status "origin/$BASE...HEAD" | head -n 40 | sed 's/^/  /'
 
 # 4. Final gate: every gate command from the worktree root, output to a log; then git must be clean.
-for spec in "${GATES[@]}"; do
-  name="${spec%%=*}"; cmd="${spec#*=}"
-  lf="$LOGDIR/ship-$TICKET-$name.log"
-  if ! (cd "$WT" && bash -c "$cmd") >"$lf" 2>&1; then
-    gate_event fail "$name"
-    echo "--- last 30 lines of $lf"; tail -n 30 "$lf"
-    die 10 gate-failed "$name (log: $lf)"
+# A re-run on the same commit with the same gates (e.g. after --no-merge) doesn't run them again.
+stamp="$LOGDIR/ship-$NAME-gate.pass"
+want="$(g rev-parse HEAD) $(printf '%s
+' "${GATES[@]}" | git hash-object --stdin)"
+if [ "$(cat "$stamp" 2>/dev/null)" = "$want" ] && [ -z "$(g status --porcelain)" ]; then
+  log "gate: already passed on $(g rev-parse --short HEAD), not run again"
+else
+  rm -f "$stamp"
+  for spec in "${GATES[@]}"; do
+    name="${spec%%=*}"; cmd="${spec#*=}"
+    lf="$LOGDIR/ship-$NAME-$name.log"
+    if ! (cd "$WT" && bash -c "$cmd") >"$lf" 2>&1; then
+      gate_event fail "$name"
+      echo "--- last 30 lines of $lf"; tail -n 30 "$lf"
+      die 10 gate-failed "$name (log: $lf)"
+    fi
+    log "gate $name: pass"
+  done
+  if [ -n "$(g status --porcelain)" ]; then
+    gate_event fail dirty
+    g status --porcelain | head -20
+    die 10 gate-failed "dirty: the gate left changes in the worktree"
   fi
-  log "gate $name: pass"
-done
-if [ -n "$(g status --porcelain)" ]; then
-  gate_event fail dirty
-  g status --porcelain | head -20
-  die 10 gate-failed "dirty: the gate left changes in the worktree"
+  gate_event pass
+  printf '%s
+' "$want" > "$stamp"
 fi
-gate_event pass
 
 # 5. Push and open the PR (or reuse the open one).
 g push -q -u origin "$BR" 2>/dev/null || die 2 usage "git push failed"

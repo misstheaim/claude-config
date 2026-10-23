@@ -13,7 +13,7 @@ Titles: short and specific, in imperative or outcome form. No type prefix; the `
 - Out: ...
 
 ## Plan
-Full details: `docs/plans/<slug>.md`
+Full details: `docs/plans/<area>.md` (main plan: `docs/plans/README.md`)
 
 Stories are linked as sub-issues.
 ```
@@ -28,7 +28,7 @@ Stories are linked as sub-issues.
 - [ ] AC1: ...
 
 ## Plan
-`docs/plans/<slug>.md`, section <n>
+`docs/plans/<area>.md`, section <n>
 
 Tasks are linked as sub-issues.
 ```
@@ -55,11 +55,18 @@ The task will be implemented by a fresh session with no other context, so the bo
 
 <Each criterion must be checkable without automated tests: in the code, with a command, or by a manual step. Add a `Verify:` note where how to check it isn't obvious.>
 
+## Spec changes
+How the behaviour spec (`docs/spec/<area>.md`) must read once this is merged. The code must match these; the spec itself is updated after the merge.
+- `<AREA>-012` new: <statement>
+- `<AREA>-004` changed: <new statement>
+
+<or "None (no behaviour change)">
+
 ## Dependencies
 Blocked by #N. <or "None">
 
 ## Plan
-`docs/plans/<slug>.md`, task T<n>
+`docs/plans/<area>.md`, task <area>.T<n>
 
 ## Suggested model
 **<Tier and version>** (confidence: <High|Medium|Low>). <one-line reason>

@@ -25,12 +25,14 @@ Rules: append only, never edit or delete lines; each line valid JSON; every even
 | `user_wait` | You stop and wait for the user | `reason`: `escalation` / `gate` / `concern` / `fable` / `baseline` / `checkpoint`, `ticket` (if any) |
 | `review` | After the review (full) or your own check (light), or when a ticket gets no review at all (skipped) | `ticket`, `path`: `full` / `light` / `skipped`, `reason` (on skipped: one line, e.g. `spike report only`), `findings`: `{"critical":0,"high":0,"medium":0,"low":0,"nit":0}`, `verification_failures` (int), `tampering` (int) |
 | `triage` | With the review event | `ticket`, `fix`, `reject`, `followup`, `ask` (ints) |
-| `final_gate` | After the final gate, for every ticket that merges | `ticket`, `result`: `pass` / `fail`, `cause` (on fail: `tests` / `build` / `lint` / `conflict` / `e2e`) |
-| `conflict` | Each merge conflict or cross-ticket test failure | `ticket`, `kind`: `merge` / `tests` / `spec`, `class` (e.g. `implementation-bug`, `brittle-test`), `resolved_by`: `coordinator` / `user` |
+| `final_gate` | After the final gate, for every ticket that merges | `ticket`, `result`: `pass` / `fail`, `cause` (on fail: `tests` / `build` / `lint` / `dirty` / `commit` / `conflict` / `e2e`; `ship.sh` uses the gate's name) |
+| `merged` | Right after the ticket's PR merges (`ship.sh` writes it) | `ticket`, `pr` (int), `refs` (bool: a `--no-close` PR, the issue stays open) |
+| `conflict` | Each merge conflict or cross-ticket test failure | `ticket`, `kind`: `merge` / `tests` / `spec` (contradicting test cases, not the behaviour spec), `class` (e.g. `implementation-bug`, `brittle-test`), `resolved_by`: `coordinator` / `user` |
 | `ticket_stopped` | A ticket is handed to the user | `ticket`, `reason`: `fix-rounds` / `failed-twice` / `spec-conflict` / `escalation` / `other` |
+| `spec` | After the wave spec update, or its skip | `wave`, `result`: `updated` / `no-change` / `missing` (no spec yet), `mismatches` (int, on updated), `choice` (on the first missing: `separate-session` / `declined`). While the spec is missing, every handoff logs `missing` |
 | `wave_handoff` | At the wave handoff | `wave`, `merged` (list of ints), `open` (list of ints) |
 | `run_finished` | When the scope is done | `merged` (int), `stopped` (int) |
 
 **Required for every merged ticket:** a `review` event (with `path: "skipped"` and a `reason` if nothing reviewed it) and a `final_gate` event. The analyzer reports a merged ticket without them as an incomplete log.
 
-A typical ticket produces three events (`review`, `triage`, `final_gate`), usually written in one or two appends.
+A typical ticket produces four events: `review` and `triage` (yours, in one append), then `final_gate` and `merged`, which `scripts/ship.sh` appends itself when called with `--events`.

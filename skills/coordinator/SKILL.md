@@ -54,7 +54,7 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 - **Project workflow:** read the repo's `CLAUDE.md` and `docs/development.md` (and `CONTRIBUTING.md` if there is one). They define how this project works, and they **override this skill's defaults** where they say something different: base branches (including which kinds of tickets use another base), branch naming, the merge method and steps after a merge, the build, lint and run commands, CI and the release process. Test commands and test rules in them don't apply in this workflow.
 
   They can't widen this mode's authority or loosen the user's own rules: if the workflow says the coordinator may merge into `main` or tag releases, still ask. Without such files, use this skill's defaults and the repo's conventions. Show the user a short **"Workflow in use"** line (base, merge method, build and lint commands, where they come from).
-- **Tooling:** check `gh auth status`. Load the `SendMessage` tool now (via ToolSearch if it's deferred); you need it to resume interrupted subagents (§3). Check that the agent types `ticket-implementer` and `ticket-fixer` exist (`~/.claude/agents/`); if they don't, use `general-purpose` with the content of those files added to each prompt.
+- **Tooling:** check `gh auth status`. Load the `SendMessage` tool now (via ToolSearch if it's deferred); you need it to resume interrupted subagents (§3). Check that the agent types `ticket-implementer`, `ticket-fixer` and `spec-writer` exist (`~/.claude/agents/`); if they don't, use `general-purpose` with the content of those files added to each prompt.
 - **Run log:** look in `<git-common-dir>/coordinator/` (`git rev-parse --git-common-dir`; inside `.git`, so it's never committed and every worktree shares it).
   - **Continuing:** if the newest log has the same scope and isn't marked finished, this session continues that run (normally after a wave handoff, §8). Read it first, and reuse what it records (workflow in use, known baseline failures, the Fable choice, the user's decisions) without asking again. Open items it lists come first.
   - **New run:** otherwise create `run-<YYYY-MM-DD-HHMM>.md`. It's the coordinator's memory for this run; see "Run log" below.
@@ -67,7 +67,8 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 - **Empty repo:** if the repo has no commits on its base branch, stop. Ask the user to do the bootstrap ticket first (e.g. with `/implement-ticket`) and push it, so PRs have a base branch.
 - **Starting point:** `git fetch origin <base>`; the local base branch is clean and fast-forwards to `origin/<base>`. If it isn't, stop and ask.
 - **Baseline check:** skip it when continuing a run and `origin/<base>` is still at the commit the wave handoff recorded. Also skip it when the project has no working commands yet because its bootstrap ticket is still open: run that ticket first and treat its final gate as the baseline. Otherwise, on `origin/<base>`, run the workflow's build and lint once. If either fails, **stop** and report it: every ticket's final gate would fail on it. Continue only after the user fixes it or tells you which failures to treat as known (record those in the run log).
-- **Plan:** find the plan document the tickets reference (e.g. `docs/plans/*.md`). It must be on `origin/<base>`, with the issue numbers in it: subagents work in worktrees created from the remote and only see what's pushed. If it's missing there or the local copy differs, stop and ask the user to push it (through a PR) first. Its "Order of work" section (waves) decides the order; without one, use the dependency graph, then issue number.
+- **Plan:** find the plan the tickets reference: a main plan `docs/plans/README.md` with area plans `docs/plans/<area>.md`, or an older single document `docs/plans/<slug>.md`. It must be on `origin/<base>`, with the issue numbers in it: subagents work in worktrees created from the remote and only see what's pushed. If it's missing there or the local copy differs, stop and ask the user to push it (through a PR) first. The main plan's "Order of work" (waves) decides the order; without one, use the dependency graph, then issue number.
+- **Behaviour spec:** one check, no reading: is `docs/spec/README.md` on `origin/<base>` (`git cat-file -e origin/<base>:docs/spec/README.md`)? Note it in the run log. Without a spec, `<git-common-dir>/coordinator/spec-declined` or the run log's spec choice decide whether the handoff offers to create one (§8).
 - **Build the queue:**
   - open issues labelled `type:task` within the scope;
   - drop tickets that already have an open PR or a branch named after them, and report them as "in progress elsewhere".
@@ -78,6 +79,7 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 
 Your context can be compacted during a long run, and in-flight state lost with it. Keep it in the run log instead of relying on memory:
 - **What goes in:** the workflow in use, known baseline failures, and an entry for the ticket in flight (ticket, model, implementer agent ID, the agent's last-turn time and context size, branch, worktree path, fix rounds, state), updated **after every state change**.
+- **The spec choice** (§8, "Spec update"): `none yet`, `separate session` or `declined`, so the offer isn't repeated.
 - **The user's decisions** during the run go into the log, and also as a comment on each affected ticket, so later sessions see them too.
 - **After a compaction** (or whenever you're unsure of the state), re-read the log before acting.
 - **At a wave handoff** (§8): the waves done, `origin/<base>`'s current commit, the next wave's tickets, open items waiting on the user, and the follow-ups created. Mark the log **finished** when the scope is done.
@@ -94,10 +96,10 @@ Each implementer keeps `<worktree>/.scratch/ticket-notes.md`: the ticket's statu
 
 Besides the run log (for you), keep a machine-readable event log for the `analyze-coordinator` skill. Log **only your judgments**; the analyzer reads everything mechanical (dispatches, resumes, PRs, merges, CI, tokens) from the transcripts. The full spec is `references/events.md`; you don't need to read it, the list below is enough.
 
-- **Events:** `session_start` {wave, continuing}, `baseline` {result, known_failures}, `wave_start` {wave, tickets}, `agent_return` {ticket, agent_id, outcome: question/partial/error; only when it's not a finished report}, `escalation` {ticket, kind: business/blocker/destructive/technical, resolved_by: coordinator/user}, `user_wait` {reason, ticket}, `final_gate` {ticket, result, cause}, `merged` {ticket, pr}, `conflict` {ticket, kind: merge/build, resolved_by}, `ticket_stopped` {ticket, reason}, `smoke_check` {wave, result: pass/fail/skipped, failures, followups, reason}, `wave_handoff` {wave, merged, open}, `run_finished` {merged, stopped}. Every line also has `ts` (ISO 8601 UTC) and `event`.
+- **Events:** `session_start` {wave, continuing}, `baseline` {result, known_failures}, `wave_start` {wave, tickets}, `agent_return` {ticket, agent_id, outcome: question/partial/error; only when it's not a finished report}, `escalation` {ticket, kind: business/blocker/destructive/technical, resolved_by: coordinator/user}, `user_wait` {reason, ticket}, `final_gate` {ticket, result, cause}, `merged` {ticket, pr}, `conflict` {ticket, kind: merge/build, resolved_by}, `ticket_stopped` {ticket, reason}, `smoke_check` {wave, result: pass/fail/skipped, failures, followups, reason}, `spec` {wave, result: updated/no-change/missing, mismatches, choice: separate-session/declined (when missing)}, `wave_handoff` {wave, merged, open}, `run_finished` {merged, stopped}. Every line also has `ts` (ISO 8601 UTC) and `event`.
 - **Every merged ticket has a `final_gate` and a `merged` event.** `ship.sh` appends both when you pass `--events` (§6). Write them yourself only when you ship by hand.
 - **Never spend a tool call on an event.** Chain the append onto a command you run anyway (`… && printf '%s\n' '<json>' >> "$EVENTS"`), or put it in the same message as your next tool call. Events that happen together go in one `printf` with several lines.
-- **Every ticket subagent's prompt starts with `Ticket #<n>:`**, so the analyzer can match the subagent to its ticket. The smoke check's prompt starts with `Smoke check wave <N>:` instead.
+- **Every ticket subagent's prompt starts with `Ticket #<n>:`**, so the analyzer can match the subagent to its ticket. The smoke check's prompt starts with `Smoke check wave <N>:`, a spec writer's with `Spec update wave <N>:` or `Spec init <area>:` instead.
 - Append only; never edit, delete or read the log back.
 
 ### Context hygiene
@@ -176,7 +178,7 @@ A fix round handles a failed basic check, a failed final gate or a red CI check.
 
 ## 6. Ship it
 
-The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself, and the `merged` event right after the merge. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (a lock left by an exited agent is cleared; a worktree locked by a live process or a folder Windows keeps busy is reported, with the ticket notes deleted), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution, a CI timeout or a killed run, run the same command again. If the PR is already merged (a run killed between the merge and the cleanup), a re-run only finishes the cleanup. The whole run stays within a time budget (`--budget`, default 540 s) below the Bash tool's 600 s limit: waiting for CI stops in time with exit 22 instead of being killed. It also prints the files in the change (vs `origin/<base>`), so you can see what was committed.
+The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself, and the `merged` event right after the merge. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (a lock left by an exited agent is cleared; a worktree locked by a live process or a folder Windows keeps busy is reported, with the ticket notes deleted), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution, a CI timeout or a killed run, run the same command again. If the PR is already merged (a run killed between the merge and the cleanup), a re-run only finishes the cleanup, and gates that already passed on the same commit (e.g. before a `--no-merge` stop) aren't run again. The whole run stays within a time budget (`--budget`, default 540 s) below the Bash tool's 600 s limit: waiting for CI stops in time with exit 22 instead of being killed. It also prints the files in the change (vs `origin/<base>`), so you can see what was committed.
 
 1. **One Bash call:** write the PR body file (next to the run log, in `logs/`) and run the script in the same command, with `timeout: 600000`:
 
@@ -193,6 +195,7 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    - Commit message, PR title and template follow the user's conventions. There's one `--gate name=command` per workflow command; each runs from the worktree root, so use `cd <dir> && …` or `--prefix` inside it. Name them `build` and `lint` (several of one kind: `build`, `build`, …), because the name becomes the `final_gate` event's `cause`.
    - Run it from the main checkout, only after the basic and files checks (§4) passed; the script checks the rest of "When a ticket is done". If the printed file list still shows a stray file, don't let it merge unnoticed: fix it in a fix round (it reached the PR, so the next commit removes it).
    - **A `Refs #<n>` PR** (e.g. a plan update for a ticket that stays open): add `--no-close`, so the merge doesn't close the issue.
+   - **A docs PR with no ticket** (the spec update, `init-spec`): `--doc <name>` instead of `--ticket`. Gates are optional, it writes no events and closes no issue.
    - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): add `--no-merge`. The script stops at a green PR (exit 40). Show it to the user with the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, run it again without `--no-merge` (with that branch's merge method) and do the approved steps. Tags and releases need their own explicit approval in that same request.
 2. **Act on the last line**, `RESULT: <code> <word> …`:
 
@@ -236,9 +239,10 @@ Try to resolve them yourself before involving anyone.
     - with `checkpoint=wave` or `checkpoint=ticket`, first ask in one line: "Continue with wave <N+1> (<k> tickets) here? Otherwise `/clear` and run `/coordinator <args>`." (a `user_wait` with reason `checkpoint`);
     - with `checkpoint=none`, pick the next ticket (§2) right away.
   - **Otherwise, hand off and end the session:**
-    1. write the wave handoff into the run log (see "Run log");
-    2. post the wave summary below;
-    3. end with this message, filled in, and stop:
+    1. run the spec update (below);
+    2. write the wave handoff into the run log (see "Run log");
+    3. post the wave summary below;
+    4. end with this message, filled in, and stop:
 
        > **Wave <N> is finished.** To keep token use low, clear this session with `/clear`, then run `/coordinator <the same arguments>` to start wave <N+1> (<k> tickets). The new session continues from the run log. <Anything to decide first, if there is.> If you have feedback first (a revert, follow-up tickets, plan changes), tell me before clearing and I'll record it for the next session.
 
@@ -247,6 +251,7 @@ Try to resolve them yourself before involving anyone.
   - the merged PRs with links and what each changed, one line each;
   - fix rounds, conflicts resolved, deviations and follow-up issues;
   - the smoke check result: passed, failed (with the follow-ups) or skipped (why), and what it couldn't check;
+  - at a handoff, the spec update: its PR, the item counts and the mismatches in one or two lines, or why there was none;
   - what the next wave contains;
   - **milestones ready for release:** when the last open ticket of a milestone merges, say so, and list the release steps from the project workflow. Don't run them; they need the user's approval.
 - **`checkpoint=wave`** (default): pauses only at wave ends, hard gates and concerns. **`checkpoint=ticket`:** also pause after every merge. **`checkpoint=none`:** no extra pauses; at a wave end it continues without asking when the rule above allows, and otherwise hands off.
@@ -278,9 +283,26 @@ Before the handoff, one subagent checks that what this wave merged actually work
   - **Unconfirmed or harness-only problems:** list them under "open items" in the handoff, without a ticket. The user decides.
 - **Log it:** the result, the harness changes and what couldn't be checked go into the wave handoff in the run log, plus one `smoke_check` event chained onto the handoff's command.
 
+### Spec update
+
+The behaviour spec (`docs/spec/`, format: `~/.claude/skills/init-spec/references/spec-format.md`) says how the product behaves now. Implementers never edit it. You bring it up to date **once per session, at the handoff** (and at the end of the run, §9): one update covers every wave since the spec's `Synced to` commit, so waves that share a session share one update. Keep it cheap: you don't read the spec or its diff, only the writer's report.
+
+**The project has a spec:**
+1. **Skip** when the tickets merged since the last update changed nothing that runs (the smoke check's skip rule). Log `spec` with `result: no-change`.
+2. **Worktree**, one call: `git worktree add -b docs/spec-wave-<N> <repo>/.claude/worktrees/spec origin/<base> && mkdir -p <repo>/.claude/worktrees/spec/.scratch` (remove a leftover at that path first; `.claude/worktrees/` is already excluded by the smoke worktree script).
+3. **Dispatch one `spec-writer`** (`model: "sonnet"`, `effort: "medium"`, no isolation). Prompt: `Spec update wave <N>:`, the worktree, the base, the target commit (`origin/<base>`), and per merged ticket one line: number, PR, its spec change IDs (from the ticket's "Spec changes"; none for older tickets). Add the smoke check's confirmed failures with their follow-up issues.
+4. **Act on its report:** a **mismatch** (the code doesn't do what a delta said) that looks like a bug becomes a follow-up as in the smoke check's results; one where the code is fine and the delta was wrong is only listed in the handoff.
+5. **Ship it** in one call: write the PR body (the item counts and mismatches from the report) and run `<skill-dir>/scripts/ship.sh --doc spec-wave-<N> --worktree <repo>/.claude/worktrees/spec --base <base> --repo <owner/repo> --title "Update spec for wave <N>" --message "docs: update spec for wave <N>" --body-file <file> --runlog "<run log>"` with the merge method, no gates (docs only) and no `--events`. Chain the `spec` event (`result: updated`, the mismatch count) onto it.
+
+**The project has no spec** (`docs/spec/README.md` isn't on `origin/<base>`): unless `<git-common-dir>/coordinator/spec-declined` exists or the run log records a choice, offer to create one, once per run, in the handoff message (a `user_wait` with reason `checkpoint`). With `checkpoint=none` and a wave continuing in this session, the offer waits for the next handoff; it never stops a wave. Say in two sentences what the spec is (how the product behaves now, one file per area, kept current at each handoff, and where the plans' spec changes land) and what creating it costs (the `init-spec` skill: one Sonnet agent per area reading that part of the code, roughly $0.3-1.5 per area). It always runs in its own session, never in this one: its scan would land in your context. Options:
+- **Create it in a separate session** (recommended): record it in the run log, and tell the user to run `/clear` and `/init-spec` (on Sonnet is enough) before the next `/coordinator`, or whenever they like. Don't offer it again in this run; one line in each later handoff reminds them while the spec is missing.
+- **Not for this project:** write `<git-common-dir>/coordinator/spec-declined` (local, never committed), so no later run asks; deleting it re-enables the offer.
+
+Log `spec` with `result: missing` at every handoff while the spec is missing, with the `choice` the first time; the analyzer uses it to tell a missing spec from a skipped update. The tickets' spec changes stay in the plan either way; the first update after the spec exists picks up everything merged since its `Synced to`.
+
 ## 9. Stop when
 
-- the scope is done: append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
+- the scope is done: run the spec update (§8), append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
 - a wave is finished and §8's rule says hand off;
 - the user interrupts or asks to stop;
 - the same ticket has failed twice, or used up its fix rounds;

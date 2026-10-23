@@ -94,7 +94,7 @@ The owner explicitly approves every step that merges into `main` or a `release/*
 ## 8. Tickets, PRs and tests
 
 - One ticket = one branch = one PR into `develop`, with `Closes #<n>` in the body.
-- Ticket test cases (IDs like `T3-TC02`) become automated tests with the ID in the test name. A ticket closes only when all of them pass.
+- Ticket test cases (IDs like `review.T3-TC02`) become automated tests with the ID in the test name. A ticket closes only when all of them pass.
 - Branch, commit and PR naming follow the owner's conventions (Conventional Commits, `#<n>` in commit scopes and PR titles).
 
 ## 9. CI

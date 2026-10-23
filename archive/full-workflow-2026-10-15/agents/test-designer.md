@@ -10,7 +10,7 @@ You design test cases before implementation, for tasks someone else will impleme
 
 Follow the format and rules in `~/.claude/skills/decompose-feature/references/test-cases.md` exactly. Read it first.
 
-Your prompt gives you the plan document and project paths, or the repo and ticket numbers. Read the plan's decisions, contracts and task details, and the codebase where you need it to make expected values concrete.
+Your prompt gives you the project, the main plan and the area plans to cover (or an older single plan document), or the repo and ticket numbers. Read the plan's decisions, contracts and task details, and the codebase where you need it to make expected values concrete. Each task's **spec changes** say how the product must behave afterwards: your cases assert that behaviour, and a case that contradicts a spec change, or a spec change no case covers, is a problem to report.
 
 Return:
 1. A "Test cases" table per task, or `None (<reason>)` with a `Verify:` line per acceptance criterion.

@@ -13,7 +13,7 @@ You evaluate how a `/coordinator` run went and where the setup should improve. *
 
 ## Where the data is
 
-- **Event log** (judgments): `<git-common-dir>/coordinator/run-<…>.events.jsonl`, written by the coordinator (format: `~/.claude/skills/coordinator/references/events.md`). Reviews and triage, escalations, waits, final gates, conflicts, stopped tickets, wave handoffs. Everything mechanical (which subagent worked on which ticket and in what role, fix rounds, PRs, merges, CI) comes from the transcripts instead.
+- **Event log** (judgments): `<git-common-dir>/coordinator/run-<…>.events.jsonl`, written by the coordinator (format: `~/.claude/skills/coordinator/references/events.md`). Reviews and triage, escalations, waits, final gates, conflicts, stopped tickets, wave handoffs. Everything mechanical (which subagent worked on which ticket and in what role, fix rounds, PRs, CI) comes from the transcripts instead; merges come from the `merged` events that `ship.sh` writes, or from the transcripts (`gh pr merge`, or a `ship.sh` call ending in `RESULT: 0 merged`).
 - **Run log** (context): `run-<…>.md` next to it, the coordinator's own notes and decisions.
 - **Transcripts** (facts): `~/.claude/projects/<sanitized repo path>/<session>.jsonl` for each coordinator session (one per wave), and `<session>/subagents/agent-<id>.jsonl` + `.meta.json` for each subagent: token usage per API call, models, timing, tool calls and errors, permission prompts, interrupts, compactions.
 
@@ -37,7 +37,7 @@ Work through these questions with numbers from the metrics. The thresholds are s
 - Tickets merged versus stopped, and why the stopped ones stopped. Cost and cycle time per merged ticket.
 
 **Subagents**
-- Per role (implementer, reviewer, fixer): cost, API calls, duration, tool errors, outcomes (`partial` = hit its turn limit, `question` = escalated).
+- Per role (implementer, reviewer, fixer, spec): cost, API calls, duration, tool errors, outcomes (`partial` = hit its turn limit, `question` = escalated). Spec writers (wave updates, and `init-spec` runs inside a coordinator session) are overhead: compare a wave update with the wave's ticket cost, and the `spec` events' mismatches with the deltas merged. The metrics' `events.spec` has the updates, mismatches and spec cost: mismatches point at vague spec changes in the plan (a `decompose-feature` improvement) or implementers drifting from them (`implement-ticket`); a spec that stays missing run after run is worth one line in the report.
 - Implementers: how many fix rounds and findings did their work cause? Which models and effort levels did well or badly for their ticket tier?
 - Reviewers: findings per review, and how many the coordinator rejected (a high rejection rate means a noisy reviewer). Review cost relative to implementation (aim ≤ 60%).
 - Fixers: were they used for mechanical rounds, and did their fixes hold?

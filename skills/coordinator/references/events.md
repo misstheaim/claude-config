@@ -35,6 +35,7 @@ A `final_gate` with `result: fail` is followed by another `final_gate` for the s
 | `conflict` | Each merge conflict or post-rebase build failure | `ticket`, `kind`: `merge` / `build` (the build breaks only after rebasing onto newly merged work), `resolved_by`: `coordinator` / `user` |
 | `ticket_stopped` | A ticket is handed to the user | `ticket`, `reason`: `fix-rounds` / `failed-twice` / `conflict` / `escalation` / `other` |
 | `smoke_check` | After the wave smoke check (or its skip), chained onto the handoff command | `wave`, `result`: `pass` / `fail` / `skipped`, `failures` (int), `followups` (list of ints), `reason` (on skipped) |
+| `spec` | After the spec update at a handoff or the run's end, or its skip | `wave`, `result`: `updated` / `no-change` / `missing` (no spec yet), `mismatches` (int, on updated), `choice` (on the first missing: `separate-session` / `declined`). While the spec is missing, every handoff logs `missing` |
 | `wave_handoff` | At the wave handoff | `wave`, `merged` (list of ints), `open` (list of ints) |
 | `run_finished` | When the scope is done | `merged` (int), `stopped` (int) |
 

@@ -34,6 +34,7 @@ ROLE_BY_AGENT_TYPE = {
     "ticket-reviewer": "reviewer",
     "ticket-fixer": "fixer",
     "test-designer": "test-designer",
+    "spec-writer": "spec",
     "Explore": "explorer",
 }
 
@@ -425,6 +426,11 @@ def main():
             m = re.search(r"gh pr merge\s+(\d+)", cmd)
             if m and not res.get("is_error"):
                 merges.append({"pr": int(m.group(1)), "ts": res.get("ts") or bc["ts"]})
+            # ship.sh merges inside the script: its last line names the ticket and the PR
+            m = "ship.sh" in cmd and re.search(r"RESULT: 0 merged #(\d+) -> PR #(\d+)", res.get("text", ""))
+            if m:
+                prs[int(m.group(2))] = int(m.group(1))
+                merges.append({"pr": int(m.group(2)), "ts": res.get("ts") or bc["ts"]})
             if "gh pr checks" in cmd:
                 ci_runs.append({"ticket": None, "minutes": minutes(bc["ts"], res.get("ts")), "failed": res.get("is_error", False)})
             if ".events.jsonl" in cmd:
@@ -503,7 +509,7 @@ def main():
                 t["findings"][k] += int(v or 0)
         if ev == "escalation":
             t["escalations"] += 1
-        if ev == "merged" and t["outcome"] != "merged":  # older logs
+        if ev == "merged" and t["outcome"] != "merged":  # ship.sh writes it; a transcript merge, if found, wins
             t["merged_ts"], t["outcome"], t["pr"] = ts, "merged", e.get("pr")
         if ev == "ticket_stopped":
             t["outcome"], t["stop_reason"] = "stopped", e.get("reason")
@@ -601,6 +607,33 @@ def main():
             notes.append("Some models have no price in the table; their cost is missing from the totals.")
             break
 
+    # behaviour spec: one update per handoff (light) or per wave (full), its mismatches and its cost
+    spec_events = [e for e in events if e.get("event") == "spec"]
+    spec_results = Counter(e.get("result") for e in spec_events)
+    spec_mismatches = sum(int(e.get("mismatches") or 0) for e in spec_events)
+    spec_choice = next((e.get("choice") for e in reversed(spec_events) if e.get("choice")), None)
+    spec_cost = by_role["spec"]["cost"] if "spec" in by_role else 0.0
+    handoffs_without_spec = 0
+    for s in sessions:
+        a, b = parse_ts(s["start"]), parse_ts(s["end"])
+        if not (a and b):
+            continue
+        inside = [e for e in events if (t := parse_ts(e.get("ts"))) and a <= t <= b]
+        ends = any(e.get("event") in ("wave_handoff", "run_finished") for e in inside)
+        if ends and not any(e.get("event") == "spec" for e in inside):
+            handoffs_without_spec += 1
+    if handoffs_without_spec and spec_events:
+        flag("warning", "spec-update-missing", f"{handoffs_without_spec} session(s) handed off without a `spec` event: the spec update was skipped or not logged.")
+    if spec_mismatches:
+        flag("warning", "spec-mismatches", f"{spec_mismatches} spec mismatch(es): merged code didn't do what its tickets' spec changes said "
+             f"(vague deltas in the plan, or implementers drifting from them) for {len(merged)} merged ticket(s).")
+    if spec_cost and agent_cost and spec_cost / agent_cost > 0.15:
+        flag("warning", "spec-cost", f"Spec writers cost ${spec_cost:.2f}, {spec_cost / agent_cost:.0%} of all subagent cost; an update should cost about what a smoke check does.")
+    if spec_results.get("missing"):
+        notes.append(f"The project has no behaviour spec yet (choice: {spec_choice or 'not recorded'}); spec changes in the tickets aren't landing anywhere.")
+    spec_stats = {"results": dict(spec_results), "mismatches": spec_mismatches, "choice": spec_choice,
+                  "cost": round(spec_cost, 4), "handoffs_without_update": handoffs_without_spec}
+
     out = {
         "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "repo": repo,
@@ -632,6 +665,7 @@ def main():
                "minutes": round(sum(c["minutes"] or 0 for c in ci_runs), 1)},
         "events": {
             "counts": dict(ev_count),
+            "spec": spec_stats,
             "escalations": [{"kind": k, "resolved_by": r, "count": v} for (k, r), v in escal.items()],
             "user_waits": dict(waits),
             "fix_rounds_by": dict(fix_by),

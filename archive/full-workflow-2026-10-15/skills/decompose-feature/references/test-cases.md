@@ -11,12 +11,12 @@ Each task gets a "Test cases" table, in the plan and in the ticket body:
 ```markdown
 | ID | Kind | Level | Given / When / Then | Covers |
 |---|---|---|---|---|
-| T3-TC01 | happy | integration | Given a valid reset token, when POST /reset with a new password, then 204 and the user can log in with the new password | AC1 |
-| T3-TC02 | edge | unit | Given a token that expired 1 second ago, when it is validated, then it is rejected with `TOKEN_EXPIRED` | AC2 |
-| T3-TC03 | error | integration | Given a token that was already used, when POST /reset, then 409 and the password is unchanged | AC2 |
+| auth.T3-TC01 | happy | integration | Given a valid reset token, when POST /reset with a new password, then 204 and the user can log in with the new password | AC1 |
+| auth.T3-TC02 | edge | unit | Given a token that expired 1 second ago, when it is validated, then it is rejected with `TOKEN_EXPIRED` | AC2 |
+| auth.T3-TC03 | error | integration | Given a token that was already used, when POST /reset, then 409 and the password is unchanged | AC2 |
 ```
 
-- **ID:** `T<task>-TC<nn>` for tasks, `S<story>-TC<nn>` for story-level cases. IDs never change once tickets exist; a removed case keeps its ID, struck through.
+- **ID:** `<area>.T<task>-TC<nn>` for tasks (`review.T3-TC02`), `<area>.S<story>-TC<nn>` for story-level cases; plans in the older single-document layout keep `T<task>-TC<nn>` and `S<story>-TC<nn>`. IDs never change once tickets exist; a removed case keeps its ID, struck through.
 - **Kind:** `happy` (the main expected use), `edge` (boundaries and unusual but valid input), `error` (invalid input, failures, forbidden actions).
 - **Level:** `unit`, `integration` or `e2e`, following the plan's testing strategy.
 - **Given / When / Then:** observable behaviour with **specific expected values** (status codes, error codes, exact outputs), never "works correctly". Inputs that behave the same way go into one case as an `Examples:` list (e.g. `Examples: "", "   ", null → VALIDATION_ERROR`), which becomes one parametrized test.
@@ -37,7 +37,7 @@ Each task gets a "Test cases" table, in the plan and in the ticket body:
 ## Test designer subagent
 
 Launch one subagent with the Agent tool: `subagent_type: "test-designer"` (defined in `~/.claude/agents/test-designer.md`: read-only, Opus, follows this file). If that agent type isn't available, use `general-purpose` with `model: "opus"`. It starts with a clean context, so its prompt must contain:
-- the absolute path of the plan document and of the project;
+- the absolute paths of the project, the main plan and the area plan(s) to cover, and of the spec (`docs/spec/`) if there is one: cases assert the behaviour each task's spec changes describe;
 - the absolute path of this file, with the instruction to follow its format and rules;
 - its role: an independent test designer who **does not edit any files or tickets**, and returns its output as text;
 - its task: write test cases for every task where they fit, read the codebase where needed to make expected values concrete, and check consistency across tasks;

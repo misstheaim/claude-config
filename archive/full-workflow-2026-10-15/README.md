@@ -5,7 +5,12 @@ The full versions of the coordinator workflow, archived when it was replaced by 
 - `skills/analyze-coordinator`: the run analyzer for that coordinator.
 - `skills/decompose-feature`: decomposition with test cases (`references/test-cases.md`, Phase 4.5).
 - `skills/implement-ticket`: implementation with test cases as automated tests.
-- `agents/`: `ticket-implementer`, `ticket-reviewer`, `ticket-fixer`, `test-designer`.
+- `skills/init-spec`: creates the behaviour spec (`docs/spec/`) for a project that has code but no spec (one writer per area, then a verification pass); `references/spec-format.md` defines the spec for every skill.
+- `agents/`: `ticket-implementer`, `ticket-reviewer`, `ticket-fixer`, `test-designer`, `spec-writer`.
+
+`skills/coordinator/scripts/ship.sh` (added 2026-10-23): the same script as the light coordinator's, used by §6 with the full test suite as a gate. Keep the two copies identical when changing it.
+
+Behaviour spec (added 2026-10-23, after archiving): the decomposer writes a main plan plus area plans with spec deltas on every task, the coordinator updates `docs/spec/` from the merged code after each wave (and offers `init-spec` when there's no spec), and implementers never edit the spec under the coordinator.
 
 Nothing here is loaded: Claude Code only reads skills from `~/.claude/skills/` and agents from `~/.claude/agents/`.
 

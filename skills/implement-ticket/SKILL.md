@@ -49,6 +49,7 @@ In autonomous mode, every "ask" in the steps below means: escalate as above, and
   - the parent issue (`gh api repos/<repo>/issues/<n>/parent`) only when the ticket's own context isn't enough;
   - the plan or spec sections the ticket cites, **only those**. Plans are long; open other sections only when the ticket points you there or something is unclear.
 - **Comments can change the spec.** Treat later comments as amendments to the body.
+- **Spec changes:** the ticket's "Spec changes" (deltas to the behaviour spec in `docs/spec/`, IDs like `REVIEW-012`) say how the product must behave afterwards. Read the current items they name in `docs/spec/<area>.md` only when a delta says "changed" and you need the old behaviour.
 
 ## 2. Check that it's ready
 
@@ -85,6 +86,9 @@ Stop and report, without changing anything, when:
 
 - **Build and lint:** run the repo's build and lint commands, with long output sent to a log file, and fix what you broke. Report failures that existed before your change separately. Don't run test suites.
 - **Acceptance criteria:** check each one and record evidence: the code that implements it (`file:line`), a command's output, or "needs manual check: <how>". Never mark a criterion met without evidence.
+- **Spec** (only if the project has `docs/spec/`):
+  - **Interactive:** update the spec in the same change: apply the ticket's spec changes, plus any other behaviour you changed, following "How to edit this spec" in `docs/spec/README.md`. Where your code differs from a delta, the spec follows the code and the report says why.
+  - **Autonomous:** never edit `docs/spec/`; the coordinator updates it later. Make sure the code does what each delta says, and report any difference under "Deviations".
 
 ## 6. Report and stop
 
@@ -96,6 +100,7 @@ End with:
 - **Changes:** main files touched.
 - **Checks:** build and lint results.
 - **Decisions made:** the non-obvious technical choices you made on your own, one line each with the reason (always in autonomous mode; interactive only if there were notable ones).
+- **Spec:** the spec items you updated (interactive); omit in autonomous mode unless a delta isn't met.
 - **Deviations and follow-ups:** anything that differs from the ticket, plus out-of-scope findings.
 - **Ready to commit:** a proposed commit message and PR title in the user's conventions. Default commit: `feat(#<n>): <summary>`. Default PR title: `#<n> <Title>`, with `Closes #<n>` in the body.
 

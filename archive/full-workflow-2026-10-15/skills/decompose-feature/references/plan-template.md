@@ -1,8 +1,15 @@
-# <Feature / project name>: implementation plan
+# Main plan template (`docs/plans/README.md`)
+
+The main plan describes the whole project and links to one area plan per area (`references/area-plan-template.md`). Cross-area things live here: the goal, the areas, decisions that span areas, the contracts between areas, milestones and the **order of work**. Everything inside one area lives in its area plan.
+
+A small project (one or two areas, about 15 tasks or fewer) may keep its areas inline, as `## Area: <name>` sections at the end of this file in the area plan's format, and split them out once it grows.
+
+```markdown
+# <Project name>: plan
 
 > Status: Draft | In review | Approved | Tickets created
 > Last updated: <YYYY-MM-DD>
-> Root issue: <#N or "n/a">
+> Behaviour spec: `docs/spec/README.md` (what is implemented now; this plan says what will change)
 
 ## 1. Context and goal
 
@@ -13,68 +20,49 @@
 
 ## 2. Current state
 
-Existing project: relevant architecture, modules, conventions and files this feature touches (with paths).
-New project: the chosen stack and the best practices it follows (with sources).
+Existing project: the architecture, its parts and conventions (with paths), and the current behaviour by reference to the spec's areas. New project: the chosen stack and the best practices it follows (with sources).
 
-## 3. Decisions
+## 3. Areas
+
+| Area | Plan | Spec | Owns | Epic | Status |
+|---|---|---|---|---|---|
+| <review> | [review.md](review.md) | `docs/spec/review.md` | <what it's responsible for, one line> | #N | planned / decomposed / tickets created |
+
+## 4. Decisions (cross-area)
 
 | # | Decision | Chosen option | Alternatives considered | Why |
 |---|---|---|---|---|
 | D1 | | | | |
 
-## 4. Architecture and design
+Area plans number their own decisions (`review.D1`).
+
+## 5. Architecture
 
 - Components and how they interact (a diagram in Mermaid if it helps).
-- **Data model:** entities, fields, relations, migrations.
-- **API contracts:** endpoints, request/response shapes, errors.
-- **UI:** screens, flows, states (loading, empty, error).
-- **Security, performance and other non-functional requirements.**
+- **Contracts between areas:** APIs, file formats, protocols, shared data model. An area plan may refine its side, never change a contract alone.
+- **Non-functional requirements:** security, performance, offline, scale.
 - **Testing strategy:** unit, integration, end-to-end; what each level covers; how time, randomness and external services are controlled in tests.
-
-## 5. Work breakdown
-
-Hierarchy overview:
-
-```
-[Epic] <name> (#N)
-├── [Story] <name> (#N)
-│   ├── [Task][backend] <name> (#N)
-│   └── [Task][frontend] <name> (#N)
-└── [Story] <name> (#N)
-    └── ...
-```
-
-Then, for every task:
-
-### T<n>. <Task title>  `area` · parent: <story> · issue: #N
-- **Goal:** one sentence.
-- **Details:** what to build, files and modules to touch, contracts to follow.
-- **Acceptance criteria:**
-  - [ ] AC1: ...
-- **Test cases:** (format and rules: `references/test-cases.md` of the decompose-feature skill)
-
-  | ID | Kind | Level | Given / When / Then | Covers |
-  |---|---|---|---|---|
-  | T<n>-TC01 | happy | | | AC1 |
-
-- **Depends on:** T<n>, ... (or none). **Can run in parallel with:** T<n>, ...
-- **Suggested model:** <tier> (confidence: <level>). <reason>
 
 ## 6. Order of work
 
-Phases or waves of tasks that can start once their dependencies are done.
+Waves of tasks across all areas, each starting once its dependencies are done. Tasks are named by area (`review.T3`) and issue.
 
-**Releases:** each milestone, its version and the tasks in it.
+| Wave | Tasks | Notes |
+|---|---|---|
+| 1 | review.T1 (#N), cli.T1 (#N) | <bootstrap, spikes, why this order> |
+
+**Releases:** each milestone, its version and its tasks.
 
 | Milestone | Version | Tasks | Goal |
 |---|---|---|---|
-| <MVP> | <0.1.0> | T1–T8 | <one line> |
+| <MVP> | <0.1.0> | <review.T1-T6, cli.T1-T3> | <one line> |
 
-## 7. Risks and open questions
+## 7. Risks and open questions (cross-area)
 
 | Risk / question | Impact | Mitigation / owner |
 |---|---|---|
 
 ## 8. Review notes
 
-Summary of the test design (problems found and how they were resolved) and of the independent review: accepted points and points rejected (with the reason).
+Summary of the test design and of the independent reviews (per session): accepted points and points rejected (with the reason).
+```

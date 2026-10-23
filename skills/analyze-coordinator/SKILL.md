@@ -37,7 +37,7 @@ Work through these questions with numbers from the metrics. The thresholds are s
 - Tickets merged versus stopped, and why the stopped ones stopped. Cost and cycle time per merged ticket.
 
 **Subagents**
-- Per role (implementer, fixer, and reviewer in full-workflow runs): cost, API calls, duration, tool errors, outcomes (`partial` = hit its turn limit, `question` = escalated).
+- Per role (implementer, fixer, smoke, spec, and reviewer in full-workflow runs): cost, API calls, duration, tool errors, outcomes (`partial` = hit its turn limit, `question` = escalated). Spec writers are overhead: one update per session should cost about what a smoke check does; an `init-spec` run inside a coordinator session is a one-off, report it separately. The metrics' `events.spec` has the updates, mismatches and spec cost: mismatches point at vague spec changes in the plan (a `decompose-feature` improvement) or implementers drifting from them (`implement-ticket`); a spec that stays missing run after run is worth one line in the report.
 - Implementers: how often did a ticket they reported done fail the final gate or CI, and how many fix rounds did that cause? Which models and effort levels did well or badly for their ticket tier? Did any write or run tests despite the rules (wasted tokens)?
 - Reviewers (full-workflow runs only): findings per review, and how many the coordinator rejected (a high rejection rate means a noisy reviewer). Review cost relative to implementation (aim ≤ 60%).
 - Fixers: were they used for mechanical rounds, and did their fixes hold?

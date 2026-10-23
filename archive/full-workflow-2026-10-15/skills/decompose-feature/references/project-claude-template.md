@@ -22,8 +22,14 @@ Keep it short: it loads into every session. Facts that change often or need deta
 
 ## Plan and tickets
 
-- Plan: `docs/plans/<slug>.md` (decisions, architecture, every task's details).
+- Plan: `docs/plans/README.md` (goal, areas, cross-area decisions and contracts, order of work), with one plan per area in `docs/plans/<area>.md` (design and every task's details).
 - Tickets: GitHub issues in `<OWNER/REPO>`, GitHub Project `<title>`. Each task ticket's test cases must all pass as automated tests before it closes.
+
+## Behaviour spec
+
+- `docs/spec/README.md` describes how the product behaves **now**, one file per area; the plans in `docs/plans/` describe what will change.
+- **Any change to behaviour updates the spec in the same change**: the affected items in `docs/spec/<area>.md` (new item with the next free ID, edit in place, or retire the ID). Format and rules: "How to edit this spec" in `docs/spec/README.md`.
+- Exception: ticket implementers run by `/coordinator` don't edit `docs/spec/`; the coordinator updates it after each wave.
 
 ## Conventions
 

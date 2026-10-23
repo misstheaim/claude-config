@@ -168,12 +168,23 @@ def md_table(headers, rows):
     return "\n".join(out)
 
 
+def spec_summary(ev):
+    s = ev.get("spec") or {}
+    if not s.get("results"):
+        return "-"
+    return f'{kv(s["results"])}; {s["mismatches"]} mismatches; ${s["cost"]:.2f}' + (f'; choice: {s["choice"]}' if s.get("choice") else "")
+
+
 def markdown(m, f, html_path):
     t, ev, u = m["totals"], m["events"], m["totals"]["usage"]
     run_log = m.get("run_log") or ""
     L = [f"# Coordinator run analysis: {os.path.basename(run_log) or 'transcripts only'}", "",
          "Input for a coordinator-improvement session: the findings and the data behind them. "
          "Apply only the improvements the user picks; the files named under \"Where\" are in `~/.claude/`.", "",
+         "**Two versions:** the coordinator workflow exists as a light version (`~/.claude/skills/`, `~/.claude/agents/`) "
+         "and a full one (`~/.claude/archive/full-workflow-2026-10-15/`). When applying an improvement, also apply it to "
+         "the other version if it has the same feature or problem; leave it out where it doesn't fit (e.g. a test-related "
+         "fix has no place in the light version, which has no tests). Keep shared files identical (`ship.sh`).", "",
          f"- Repo: `{m['repo']}`", f"- Generated: {m['generated']}", f"- HTML report: `{html_path}`",
          f"- Run log: `{run_log or 'none'}`", f"- Event log: `{m.get('events_file') or 'none'}`",
          f"- Costs: {m['pricing_note']}", "",
@@ -230,7 +241,8 @@ def markdown(m, f, html_path):
         ["Findings", kv(ev["findings"])], ["Triage", kv(ev.get("triage"))],
         ["Reviewer reject rate", ev.get("reject_rate") if ev.get("reject_rate") is not None else "-"],
         ["Fix rounds by", kv(ev["fix_rounds_by"])], ["Final gates", kv(ev["final_gates"])],
-        ["Gate failure causes", kv(ev["final_gate_fail_causes"])], ["Conflicts", kv(ev["conflicts"])]]), ""]
+        ["Gate failure causes", kv(ev["final_gate_fail_causes"])], ["Conflicts", kv(ev["conflicts"])],
+        ["Spec updates", spec_summary(ev)]]), ""]
     if m["flags"]:
         L += ["## Automatic signals", ""] + [f'- [{x["severity"]}] {x["message"]}' for x in m["flags"]] + [""]
     if m["notes"]:
@@ -344,7 +356,7 @@ def main():
     proc = [["Review path", E(kv(ev["review_paths"]))], ["Review skipped because", E(kv(ev.get("review_skip_reasons")))], ["Findings", E(kv(ev["findings"]))],
             ["Fix rounds by", E(kv(ev["fix_rounds_by"]))], ["Final gates", E(kv(ev["final_gates"]))],
             ["Gate failure causes", E(kv(ev["final_gate_fail_causes"]))],
-            ["Conflicts", E(kv(ev["conflicts"]))], ["Tool errors", t["tool_errors"]],
+            ["Conflicts", E(kv(ev["conflicts"]))], ["Spec updates", E(spec_summary(ev))], ["Tool errors", t["tool_errors"]],
             ["CI", E(f'{m["ci"]["runs"]} runs, {m["ci"]["failed"]} failed, {m["ci"]["minutes"]:.0f} min waiting')],
             ["Event appends", E(f'{m["event_logging"]["appends"]} ({m["event_logging"]["standalone_appends"]} with their own tool call)')]]
     parts.append('<div class="card"><h3>Process</h3>' + table(["Metric", "Value"], proc) + "</div></div>")

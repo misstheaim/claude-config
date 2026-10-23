@@ -46,7 +46,8 @@ In autonomous mode, every "ask" in the steps below means: escalate as above, and
   - the parent issue (`gh api repos/<repo>/issues/<n>/parent`, if it exists) for context;
   - the plan or spec sections the ticket cites, **only those**. Plans are long; open other sections only when the ticket points you there or something is unclear.
 - **Comments can change the spec.** Treat later comments as amendments to the body.
-- **Test cases:** note the ticket's "Test cases" table (IDs like `T3-TC01`). They were written before implementation, by someone other than you, and the ticket is done only when every one of them passes as an automated test.
+- **Spec changes:** note the ticket's "Spec changes" (deltas to the behaviour spec in `docs/spec/`, IDs like `REVIEW-012`): they say how the product must behave afterwards. Read the current items in `docs/spec/<area>.md` only for deltas that change or remove one, when you need the old behaviour; new items aren't in the spec yet.
+- **Test cases:** note the ticket's "Test cases" table (IDs like `review.T3-TC01`). They were written before implementation, by someone other than you, and the ticket is done only when every one of them passes as an automated test.
 
 ## 2. Check that it's ready
 
@@ -86,13 +87,16 @@ Stop and report, without changing anything, when:
 
 ## 5. Verify
 
-- **Test cases:** implement **every** case in the ticket's table as an automated test at the level it names, and put the case ID in the test name or a comment next to it, so it can be traced (e.g. `T3-TC02 expired token is rejected`).
+- **Test cases:** implement **every** case in the ticket's table as an automated test at the level it names, and put the case ID in the test name or a comment next to it, so it can be traced (e.g. `auth.T3-TC02 expired token is rejected`).
   - The test must assert what the case's "Then" says, with its specific values. Don't weaken, skip or loosen it to make it pass.
   - **Never change a case's expected behaviour.** If a case looks wrong, contradicts another case or the codebase, or can't be implemented as written, implement the rest and report it under "Deviations" with the reason and what you'd propose. Don't decide it yourself.
   - No test cases in the ticket: write tests for the acceptance criteria yourself, and say so in the report.
 - **Other tests:** add tests for any other logic you add.
 - **Checks:** run the repo's build, lint and **full** test suite, not only your new tests, and fix what you broke. Report failures that existed before your change separately.
 - **Acceptance criteria:** check each one and record evidence (a test name, command output, or "needs manual check: <how>"). Never mark a criterion met without evidence.
+- **Spec** (only if the project has `docs/spec/`):
+  - **Interactive:** update the spec in the same change: apply the ticket's spec changes, plus any other behaviour you changed, following "How to edit this spec" in `docs/spec/README.md`. Check each statement against your code; where the code differs from a delta, the spec follows the code and the report says why.
+  - **Autonomous:** never edit `docs/spec/`; the coordinator updates it after the wave. Check that the code does what each delta says, and report any difference under "Deviations".
 
 ## 6. Report and stop
 
@@ -103,6 +107,7 @@ End with:
 - **Test cases:** a table with every case: `ID | test name (file) | ✅ pass / ❌ fail / ⚠ not implemented (why)`.
 - **Tests:** what ran and the results, including failures.
 - **Decisions made:** the non-obvious technical choices you made on your own, one line each with the reason (always in autonomous mode; interactive only if there were notable ones).
+- **Spec:** the spec items you updated (interactive), or that every delta is met (autonomous); omit when the ticket has no spec changes.
 - **Deviations and follow-ups:** anything that differs from the ticket, plus out-of-scope findings.
 - **Ready to commit:** a proposed commit message and PR title in the user's conventions. Default commit: `feat(#<n>): <summary>`. Default PR title: `#<n> <Title>`, with `Closes #<n>` in the body.
 

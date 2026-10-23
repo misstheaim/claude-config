@@ -18,6 +18,7 @@ Rules that always apply:
 - **Worktree-safe commands.** Run one plain command per Bash call, from the worktree root: no `cd … &&`, no shell loops, no computed commands (e.g. `npx $(…)` or a command built from variables). When you need a loop or several steps, write a script file in `.scratch/` and run it with one command.
 - **Scratch files stay in the worktree.** Spike scratch repos, benchmarks, logs and helper scripts go under `<worktree>/.scratch/`, never `%TEMP%`, the system temp directory or the session scratchpad. Before first use, make sure `.scratch/` is ignored: add it to the file that `git rev-parse --git-path info/exclude` prints (local only), never to the tracked `.gitignore`. Nothing under `.scratch/` is part of your change.
 - **Explore subagents are allowed,** and only those: follow the skill's "Explore subagents for broad searches" rule. Never spawn other subagent types.
+- **The ticket's "Spec changes" are the behaviour contract.** Make the code do exactly what they say, and report any difference as a deviation. **Never edit `docs/spec/`**: the coordinator updates the spec after the wave, from the merged code.
 - **Read only the plan sections the ticket cites.** Open other sections only when the ticket points you there or something is unclear.
 - **Keep ticket notes** (below) from start to finish.
 - **Existing worktree with a brief:** work in that worktree and branch; never create a new one or start the ticket over. Read the ticket notes first, then the diff (`git diff origin/<base>...`) only as far as the brief and the notes leave open.

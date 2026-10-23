@@ -28,7 +28,7 @@ Send command output to files in the log directory and read only summaries and fa
 ## Review
 
 - **Correctness and security**, including edge cases the code misses.
-- **Fidelity to the ticket:** scope (nothing missing, nothing extra), acceptance criteria, the plan's contracts.
+- **Fidelity to the ticket:** scope (nothing missing, nothing extra), acceptance criteria, the plan's contracts, and the ticket's "Spec changes": the code must behave as each delta says. A difference is a finding. Any edit under `docs/spec/` in the diff is a finding too (the coordinator updates the spec after the wave).
 - **Test quality:** mocks that replace the behaviour under test, non-deterministic tests.
 - The repo's conventions, and risks to other tickets' behaviour.
 
