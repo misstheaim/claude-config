@@ -67,6 +67,7 @@ Stop and report, without changing anything, when:
 - **Always start from its latest version:** `git fetch origin <base>`, then `git switch -c <branch> origin/<base>`. Never branch from a local copy or from whatever is checked out. Fetching is fine; never push.
 - **Name the branch** by the user's conventions (their CLAUDE.md wins). Default: `<type>/<number>-<short-kebab-title>`, where the type is `fix/` for bugs, `refactor/`, `docs/` or `chore/` when the labels or title say so, otherwise `feature/`.
 - **If the branch already exists:** interactive: ask whether to continue on it. Autonomous: continue on it if it holds only earlier work on this ticket and has no open PR; otherwise create the branch with a `-2` suffix. Say which in the report.
+- **Autonomous: create the scratch folder** with `mkdir -p .scratch` before anything writes to it. It's ignored, so a fresh worktree doesn't have it, and a log redirect into it fails.
 
 ## 4. Implement
 
@@ -86,6 +87,8 @@ Stop and report, without changing anything, when:
 - **Acceptance criteria:** check each one and record evidence: the code that implements it (`file:line`), a command's output, or "needs manual check: <how>". Never mark a criterion met without evidence.
 
 ## 6. Report and stop
+
+**Autonomous, under a coordinator:** your ticket notes (`.scratch/ticket-notes.md`, defined by your agent instructions) must already be current when you get here: written after your plan, updated after the first passing build and after each step. If the turn limit stops you before the report, they're what the coordinator reads.
 
 End with:
 - **Summary:** what was done, in 2–4 sentences.

@@ -481,6 +481,11 @@ def main():
             m = re.search(r"gh pr merge\s+(\d+)", cmd)
             if m and not res.get("is_error"):
                 merges.append({"pr": int(m.group(1)), "ts": res.get("ts") or bc["ts"]})
+            # ship.sh merges inside the script: its last line names the ticket and the PR
+            m = "ship.sh" in cmd and re.search(r"RESULT: 0 merged #(\d+) -> PR #(\d+)", res.get("text", ""))
+            if m:
+                prs[int(m.group(2))] = int(m.group(1))
+                merges.append({"pr": int(m.group(2)), "ts": res.get("ts") or bc["ts"]})
             if "gh pr checks" in cmd:
                 ci_runs.append({"ticket": None, "minutes": minutes(bc["ts"], res.get("ts")), "failed": res.get("is_error", False)})
             if ".events.jsonl" in cmd:
@@ -559,7 +564,7 @@ def main():
                 t["findings"][k] += int(v or 0)
         if ev == "escalation":
             t["escalations"] += 1
-        if ev == "merged" and t["outcome"] != "merged":  # older logs
+        if ev == "merged" and t["outcome"] != "merged":  # ship.sh writes it; a transcript merge, if found, wins
             t["merged_ts"], t["outcome"], t["pr"] = ts, "merged", e.get("pr")
         if ev == "ticket_stopped":
             t["outcome"], t["stop_reason"] = "stopped", e.get("reason")

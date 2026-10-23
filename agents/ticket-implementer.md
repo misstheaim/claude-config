@@ -21,10 +21,13 @@ Rules that always apply:
 - **Worktree-safe commands.** Run one plain command per Bash call, from the worktree root:
   - no `cd … &&`: use the tool's own directory flag (`npm --prefix extension run lint`, `go -C helper build ./...`, `git -C <dir>`) or a script;
   - no `;`/`&&` chains, and never put a git command in a chain;
-  - no shell loops and no computed commands (e.g. `npx $(…)` or a command built from variables).
+  - no shell loops and no computed commands (e.g. `npx $(…)` or a command built from variables);
+  - no heredocs at all (`cat > .scratch/x.py <<EOF`, `python - <<EOF`, `node - <<EOF`): Write the script to `.scratch/` with the Write tool, then run it with a plain `python .scratch/x.py`;
+  - an environment variable goes as a prefix of the one command that needs it (`COMPOSER_HOME=.scratch/home npm --prefix extension run build`), never `export VAR=… && (…)`;
+  - `git status` and `git diff` always run as their own call, never after a script or a build in the same command.
 
   Redirecting one command's output to a log is fine (`npm --prefix extension run build > .scratch/build.log 2>&1`); read the log afterwards with Read or a separate `tail`. When you need a loop or several steps, Write a script file in `.scratch/` and run it with one command.
-- **Scratch files stay in the worktree.** Spike scratch repos, benchmarks, logs and helper scripts go under `<worktree>/.scratch/`, never `%TEMP%`, the system temp directory or the session scratchpad. The coordinator makes sure `.scratch/` is ignored before dispatching you; never edit `.gitignore` or anything under `.git` for it. If `git status` still lists `.scratch/`, say so in your report. Nothing under `.scratch/` is part of your change.
+- **Scratch files stay in the worktree.** A fresh worktree has no `.scratch/` (it's ignored, so git doesn't create it): run `mkdir -p .scratch` as your first command in the worktree, before any log redirect. Spike scratch repos, benchmarks, logs and helper scripts go under `<worktree>/.scratch/`, never `%TEMP%`, the system temp directory or the session scratchpad. The coordinator makes sure `.scratch/` is ignored before dispatching you; never edit `.gitignore` or anything under `.git` for it. If `git status` still lists `.scratch/`, say so in your report. Nothing under `.scratch/` is part of your change.
 - **Keep ticket notes** (below) from start to finish.
 - **Existing worktree with a brief:** work in that worktree and branch; never create a new one or start the ticket over. Read the ticket notes first, then the diff (`git diff origin/<base>...`) only as far as the brief and the notes leave open.
   - **Problems to fix** (fix round): follow the skill's "Fix rounds" section and apply only what the brief asks.
@@ -45,5 +48,5 @@ End every turn with the skill's report, including the branch name, the worktree 
   - **Decisions:** non-obvious choices with a one-line reason, including approaches you tried and dropped, and why, so nobody tries them again.
   - **Gotchas:** facts that cost you time: commands that work, setup steps, traps in the codebase or the environment.
   - **Log:** one line per step or round (`implementer: <what happened>`), with paths to log files in `.scratch/` instead of output.
-- **Update it** after your plan, after each finished step, and before you return for any reason (report, question, error). Don't leave it for the end: the turn limit can cut you off.
+- **Write it early and keep it current.** Create it right after your plan (Status and Approach are enough then), update it right after the **first passing build** (Criteria with what's done so far) and after each finished step, and before you return for any reason (report, question, error). Don't leave it for the end: the turn limit can cut you off, and then these notes are all the next agent and the coordinator have.
 - **Keep it small:** under about 800 lines (about 20k tokens). Most tickets need well under 100 lines; the cap is for long multi-round tickets, not a target. Edit in place instead of appending: replace outdated lines, drop superseded decisions, and once the log passes about 60 lines, fold the oldest entries into one summary line. Never paste code, diffs or command output; point to `file:line` or a log file.

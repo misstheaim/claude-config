@@ -8,6 +8,7 @@
 #           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge] [--no-close]
 #
 # --no-close: merge but leave the issue open (a "Refs #N" PR, e.g. a plan update for a ticket that isn't done).
+# --events: append the final_gate event after the gate and a merged event right after the merge.
 #
 # Idempotent: re-run it after a fix round, a conflict resolution, a CI timeout or a killed run and it picks up
 # where it stopped (an existing commit, pushed branch, open PR or already merged PR is reused).
@@ -84,6 +85,10 @@ gate_event() { # result cause
   if [ "$1" = pass ]; then event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"pass\",\"cause\":null}"
   else event "{\"ts\":\"$(now)\",\"event\":\"final_gate\",\"ticket\":$TICKET,\"result\":\"fail\",\"cause\":\"$2\"}"; fi
 }
+merged_event() { # pr [ts]; refs: a --no-close PR, the issue stays open
+  local refs=false; [ $NO_CLOSE -eq 0 ] || refs=true
+  event "{\"ts\":\"${2:-$(now)}\",\"event\":\"merged\",\"ticket\":$TICKET,\"pr\":$1,\"refs\":$refs}"
+}
 
 # Is the process with this (OS-level) pid still running? On Windows the lock holds a Windows pid, which
 # Git Bash's kill can't see, so ask tasklist there.
@@ -156,6 +161,8 @@ MERGED_PR=$(gh pr list -R "$REPO" --head "$BR" --state merged --json number -q '
 if [ -n "$MERGED_PR" ]; then
   [ -z "$(g status --porcelain)" ] || die 2 usage "PR #$MERGED_PR for $BR is already merged, but the worktree has new changes: ship them on a new branch"
   log "PR #$MERGED_PR is already merged; finishing the cleanup"
+  # the killed run may not have logged the merge; the analyzer counts a ticket's merge once
+  merged_event "$MERGED_PR" "$(gh pr view "$MERGED_PR" -R "$REPO" --json mergedAt -q .mergedAt 2>/dev/null)"
   cleanup_after_merge "$MERGED_PR"
 fi
 
@@ -268,4 +275,5 @@ fi
 # 7. Merge, then clean up.
 gh pr merge "$PR" -R "$REPO" "--$METHOD" >/dev/null 2>&1 || die 30 merge-failed "gh pr merge refused PR #$PR: $(gh pr view "$PR" -R "$REPO" --json mergeable,mergeStateStatus -q '"\(.mergeable) \(.mergeStateStatus)"')"
 log "merged PR #$PR ($METHOD)"
+merged_event "$PR"
 cleanup_after_merge "$PR"

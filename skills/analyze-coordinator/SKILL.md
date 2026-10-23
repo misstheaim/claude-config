@@ -13,7 +13,7 @@ You evaluate how a `/coordinator` run went and where the setup should improve. T
 
 ## Where the data is
 
-- **Event log** (judgments): `<git-common-dir>/coordinator/run-<…>.events.jsonl`, written by the coordinator (format: `~/.claude/skills/coordinator/references/events.md`). Reviews and triage (full-workflow runs only), escalations, waits, final gates, conflicts, stopped tickets, wave handoffs. Everything mechanical (which subagent worked on which ticket and in what role, fix rounds, PRs, merges, CI) comes from the transcripts instead.
+- **Event log** (judgments): `<git-common-dir>/coordinator/run-<…>.events.jsonl`, written by the coordinator (format: `~/.claude/skills/coordinator/references/events.md`). Reviews and triage (full-workflow runs only), escalations, waits, final gates, conflicts, stopped tickets, wave handoffs. Everything mechanical (which subagent worked on which ticket and in what role, fix rounds, PRs, CI) comes from the transcripts instead; merges come from the `merged` events that `ship.sh` writes, or from the transcripts (`gh pr merge`, or a `ship.sh` call ending in `RESULT: 0 merged`).
 - **Run log** (context): `run-<…>.md` next to it, the coordinator's own notes and decisions.
 - **Transcripts** (facts): `~/.claude/projects/<sanitized repo path>/<session>.jsonl` for each coordinator session (one per wave), and `<session>/subagents/agent-<id>.jsonl` + `.meta.json` for each subagent: token usage per API call, models, timing, tool calls and errors, permission prompts, interrupts, compactions.
 
