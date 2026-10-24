@@ -12,6 +12,8 @@ The full versions of the coordinator workflow, archived when it was replaced by 
 
 Behaviour spec (added 2026-10-23, after archiving): the decomposer writes a main plan plus area plans with spec deltas on every task, the coordinator updates `docs/spec/` from the merged code after each wave (and offers `init-spec` when there's no spec), and implementers never edit the spec under the coordinator.
 
+Shared with the light workflow, not archived: `skills/create-ticket` (added 2026-10-25) reads the ticket template and `github.md` from whichever `decompose-feature` is installed, and adds test cases only when that is the full version. `implement-ticket` in both versions updates the spec and the plan on the user's approval in interactive mode (step 8).
+
 Nothing here is loaded: Claude Code only reads skills from `~/.claude/skills/` and agents from `~/.claude/agents/`.
 
 To restore, copy the folders back over the light versions:
