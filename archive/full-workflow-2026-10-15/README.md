@@ -12,6 +12,8 @@ The full versions of the coordinator workflow, archived when it was replaced by 
 
 Behaviour spec (added 2026-10-23, after archiving): the decomposer writes a main plan plus area plans with spec deltas on every task, the coordinator updates `docs/spec/` from the merged code after each wave (and offers `init-spec` when there's no spec), and implementers never edit the spec under the coordinator.
 
+Flat per-session cost (added 2026-10-25, same as the light versions): the run log keeps only the current and previous session (older ones in `run-<id>.history.md`), standing decisions and facts live in a capped `decisions.md` shared by all runs, the analyzer works from a digest printed by `collect.py` instead of reading the metrics JSON, and finished waves collapse into a `Done:` line in the main plan's order of work (shipped with the wave spec update).
+
 Shared with the light workflow, not archived: `skills/create-ticket` (added 2026-10-25) reads the ticket template and `github.md` from whichever `decompose-feature` is installed, and adds test cases only when that is the full version. `implement-ticket` in both versions updates the spec and the plan on the user's approval in interactive mode (step 8).
 
 Nothing here is loaded: Claude Code only reads skills from `~/.claude/skills/` and agents from `~/.claude/agents/`.

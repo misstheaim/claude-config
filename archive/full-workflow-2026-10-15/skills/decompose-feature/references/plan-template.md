@@ -47,6 +47,8 @@ Area plans number their own decisions (`review.D1`).
 
 Waves of tasks across all areas, each starting once its dependencies are done. Tasks are named by area (`review.T3`) and issue.
 
+Done: <none yet; the coordinator replaces each finished wave's row with its number here, e.g. `waves 1-12`>
+
 | Wave | Tasks | Notes |
 |---|---|---|
 | 1 | review.T1 (#N), cli.T1 (#N) | <bootstrap, spikes, why this order> |

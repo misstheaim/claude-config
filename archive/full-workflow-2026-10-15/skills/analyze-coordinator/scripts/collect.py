@@ -314,7 +314,9 @@ def main():
         base = re.sub(r"(\.events\.jsonl|\.md)$", "", base)
         run_log, events_path = base + ".md", base + ".events.jsonl"
     elif run_dir and os.path.isdir(run_dir):
-        logs = sorted(glob.glob(os.path.join(run_dir, "run-*.md")))
+        # only run-<YYYY-MM-DD-HHMM>.md, not its .history.md or the reports next to it
+        logs = sorted(p for p in glob.glob(os.path.join(run_dir, "run-*.md"))
+                      if re.fullmatch(r"run-\d{4}-\d{2}-\d{2}-\d{4}\.md", os.path.basename(p)))
         if logs:
             run_log = logs[-1]
             events_path = run_log[:-3] + ".events.jsonl"
@@ -689,13 +691,68 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
 
-    t = out["totals"]
     print(f"metrics: {out_path}")
-    print(f"sessions {t['sessions']}, subagents {t['subagents']}, merged {t['tickets_merged']}, stopped {t['tickets_stopped']}")
-    print(f"cost ${t['cost']:.2f} (coordinator ${t['coordinator_cost']:.2f}, subagents ${t['subagent_cost']:.2f}), cache hit {t['cache_hit_ratio']}")
-    print(f"flags {len(flags)}, notes {len(notes)}")
-    for n in notes:
-        print("note:", n)
+    print(digest(out, out_path))
+
+
+def trend_row(name, m):
+    """One line per run for the trends table; tolerates metrics from older versions of this script."""
+    t, ev = m.get("totals", {}), m.get("events", {})
+    merged = t.get("tickets_merged") or 0
+    fixes = sum(x.get("fix_rounds", 0) for x in (m.get("tickets") or {}).values())
+    share = t["coordinator_cost"] / t["cost"] if t.get("cost") else None
+    per = lambda v: f"{v / merged:.2f}" if merged and v is not None else "-"
+    return (f"| {name} | {t.get('sessions', '-')} | {merged} | {t.get('tickets_stopped', '-')} | ${t.get('cost', 0):.2f} "
+            f"| {'$%.2f' % t['cost_per_merged_ticket'] if t.get('cost_per_merged_ticket') else '-'} "
+            f"| {f'{share:.0%}' if share is not None else '-'} | {t.get('cache_hit_ratio', '-')} "
+            f"| {per(fixes)} | {per(t.get('user_waits'))} | {per(sum(e.get('count', 0) for e in ev.get('escalations') or []))} "
+            f"| {t.get('permission_prompts', '-')} |")
+
+
+def digest(m, out_path):
+    """What the analyst reads instead of the metrics JSON: totals, flags, compact tables, outlier agents, and trends
+    across earlier runs. Its size depends on the run's tickets and sessions, never on earlier runs (last 10 only)."""
+    t, ev, L = m["totals"], m["events"], []
+    L.append(f"## Totals\n{json.dumps({k: v for k, v in t.items() if k != 'usage'})}\nusage {json.dumps(t['usage'])}")
+    L.append("## By role\n" + "\n".join(f"- {k}: ${v['cost']:.2f}, {v.get('agents', '-')} agents" for k, v in m["by_role"].items()))
+    L.append("## By model\n" + "\n".join(f"- {k}: ${v['cost']:.2f}" for k, v in m["by_model"].items()))
+    L.append(f"## Events\n{json.dumps(ev)}\nevent_logging {json.dumps(m['event_logging'])}, ci {json.dumps(m['ci'])}")
+    L.append("## Flags\n" + ("\n".join(f"- [{f['severity']}] {f['id']}: {f['message']}" for f in m["flags"]) or "none"))
+    L.append("## Notes\n" + ("\n".join(f"- {n}" for n in m["notes"]) or "none"))
+    L.append("## Sessions\n| session | min | cost | api calls | max context | compactions | interrupts | perm prompts | tool errors |\n|---|---|---|---|---|---|---|---|---|\n"
+             + "\n".join(f"| {s['session_id'][:8]} | {s['duration_min']} | ${s['cost']:.2f} | {s['api_calls']} | {s['max_context']:,} "
+                         f"| {s['compactions']} | {s['interrupts']} | {s['permission_prompts']} | {s['tool_errors']} |" for s in m["sessions"]))
+    L.append("## Tickets\n| ticket | outcome | cost | agents | fix rounds | escalations | cycle min | PR |\n|---|---|---|---|---|---|---|---|\n"
+             + "\n".join(f"| #{n} | {x['outcome']} | ${x['cost']:.2f} | {', '.join(a['role'] for a in x['agents'])} | {x['fix_rounds']} "
+                         f"| {x.get('escalations', 0)} | {x.get('cycle_min', '-')} | {x.get('pr', '-')} |" for n, x in m["tickets"].items()))
+    # outlier agents only: an unusual outcome, errors, resumes, or over twice its role's median cost
+    med = {}
+    for r in {a["role"] for a in m["agents"]}:
+        c = sorted(a["cost"] for a in m["agents"] if a["role"] == r)
+        med[r] = c[len(c) // 2]
+    odd = [a for a in m["agents"] if a["outcomes"] or a["tool_errors"] >= 3 or a["resumes"] or a["permission_prompts"]
+           or a["cost"] > 2 * med[a["role"]]]
+    L.append(f"## Outlier agents ({len(odd)} of {len(m['agents'])}; the rest are in the metrics JSON)\n"
+             "| agent | role | ticket | model / effort | cost | api calls | min | tool errors | resumes | outcomes |\n|---|---|---|---|---|---|---|---|---|---|\n"
+             + "\n".join(f"| {a['agent_id']} | {a['role']} | {a['ticket'] or '-'} | {a.get('requested_model') or '-'} / {a.get('effort') or '-'} "
+                         f"| ${a['cost']:.2f} | {a['api_calls']} | {a['duration_min']} | {a['tool_errors']} | {a['resumes']} "
+                         f"| {', '.join(a['outcomes']) or '-'} |" for a in odd))
+    # trends: rows computed from earlier metrics files by this script, so the analyst never opens them
+    folder, here = os.path.dirname(os.path.abspath(out_path)), os.path.abspath(out_path)
+    rows = []
+    for p in sorted(glob.glob(os.path.join(folder, "*.metrics.json"))):
+        if p.endswith(".report.metrics.json") or os.path.abspath(p) == here:
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                rows.append(trend_row(os.path.basename(p)[:-13], json.load(f)))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    rows = rows[-9:] + [trend_row(os.path.basename(out_path)[:-13] + " (this run)", m)]
+    L.append("## Trends (last 10 runs; per merged ticket: fix rounds, user waits, escalations)\n"
+             "| run | sessions | merged | stopped | cost | cost/ticket | coordinator share | cache hit | fixes | waits | escalations | perm prompts |\n"
+             "|---|---|---|---|---|---|---|---|---|---|---|---|\n" + "\n".join(rows))
+    return "\n\n".join(L)
 
 
 if __name__ == "__main__":
