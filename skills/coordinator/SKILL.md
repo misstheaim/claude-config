@@ -56,8 +56,9 @@ The PR's `Closes #<n>` then closes the ticket on merge.
   They can't widen this mode's authority or loosen the user's own rules: if the workflow says the coordinator may merge into `main` or tag releases, still ask. Without such files, use this skill's defaults and the repo's conventions. Show the user a short **"Workflow in use"** line (base, merge method, build and lint commands, where they come from).
 - **Tooling:** check `gh auth status`. Load the `SendMessage` tool now (via ToolSearch if it's deferred); you need it to resume interrupted subagents (§3). Check that the agent types `ticket-implementer`, `ticket-fixer` and `spec-writer` exist (`~/.claude/agents/`); if they don't, use `general-purpose` with the content of those files added to each prompt.
 - **Run log:** look in `<git-common-dir>/coordinator/` (`git rev-parse --git-common-dir`; inside `.git`, so it's never committed and every worktree shares it).
-  - **Continuing:** if the newest log has the same scope and isn't marked finished, this session continues that run (normally after a wave handoff, §8). Read it first, and reuse what it records (workflow in use, known baseline failures, the Fable choice, the user's decisions) without asking again. Open items it lists come first.
+  - **Continuing:** if the newest log (`run-<YYYY-MM-DD-HHMM>.md`; never its `.history.md` or a `.report.md`) has the same scope and isn't marked finished, this session continues that run (normally after a wave handoff, §8). Read it first (not the history), and reuse what it records (workflow in use, in-flight state) without asking again. Open items it lists come first.
   - **New run:** otherwise create `run-<YYYY-MM-DD-HHMM>.md`. It's the coordinator's memory for this run; see "Run log" below.
+  - **Decisions file:** read `<git-common-dir>/coordinator/decisions.md` in every session, new run or continuing (create it on first use; see "Decisions file" below). What it records holds without asking again.
   - **Event log:** next to it, append to `run-<YYYY-MM-DD-HHMM>.events.jsonl` (same name as the run log; create it on a new run). Write `session_start` in the same command that creates or reads the run log. See "Event log" below.
 - **Dev tools on the machine:** find the toolchain the repo needs (from `docs/development.md`, a README "Requirements" section, or project files such as `package.json`, `go.mod`, `*.csproj`), and check each tool with its version command.
   - **If anything is missing, stop** and give the user the exact install commands. Never install system software yourself: this mode's authority covers only the GitHub repo.
@@ -66,26 +67,47 @@ The PR's `Closes #<n>` then closes the ticket on merge.
 - **Base branch:** resolve it (see the arguments) and tell the user which one you'll use.
 - **Empty repo:** if the repo has no commits on its base branch, stop. Ask the user to do the bootstrap ticket first (e.g. with `/implement-ticket`) and push it, so PRs have a base branch.
 - **Starting point:** `git fetch origin <base>`; the local base branch is clean and fast-forwards to `origin/<base>`. If it isn't, stop and ask.
-- **Baseline check:** skip it when continuing a run and `origin/<base>` is still at the commit the wave handoff recorded. Also skip it when the project has no working commands yet because its bootstrap ticket is still open: run that ticket first and treat its final gate as the baseline. Otherwise, on `origin/<base>`, run the workflow's build and lint once. If either fails, **stop** and report it: every ticket's final gate would fail on it. Continue only after the user fixes it or tells you which failures to treat as known (record those in the run log).
-- **Plan:** find the plan the tickets reference: a main plan `docs/plans/README.md` with area plans `docs/plans/<area>.md`, or an older single document `docs/plans/<slug>.md`. It must be on `origin/<base>`, with the issue numbers in it: subagents work in worktrees created from the remote and only see what's pushed. If it's missing there or the local copy differs, stop and ask the user to push it (through a PR) first. The main plan's "Order of work" (waves) decides the order; without one, use the dependency graph, then issue number.
-- **Behaviour spec:** one check, no reading: is `docs/spec/README.md` on `origin/<base>` (`git cat-file -e origin/<base>:docs/spec/README.md`)? Note it in the run log. Without a spec, `<git-common-dir>/coordinator/spec-declined` or the run log's spec choice decide whether the handoff offers to create one (§8).
+- **Baseline check:** skip it when continuing a run and `origin/<base>` is still at the commit the wave handoff recorded. Also skip it when the project has no working commands yet because its bootstrap ticket is still open: run that ticket first and treat its final gate as the baseline. Otherwise, on `origin/<base>`, run the workflow's build and lint once. If either fails, **stop** and report it: every ticket's final gate would fail on it. Continue only after the user fixes it or tells you which failures to treat as known (record those as facts in the decisions file).
+- **Plan:** find the plan the tickets reference: a main plan `docs/plans/README.md` with area plans `docs/plans/<area>.md`, or an older single document `docs/plans/<slug>.md`. It must be on `origin/<base>`, with the issue numbers in it: subagents work in worktrees created from the remote and only see what's pushed. If it's missing there or the local copy differs, stop and ask the user to push it (through a PR) first. The main plan's "Order of work" (waves) decides the order (read only that section; finished waves are collapsed into its `Done:` line); without one, use the dependency graph, then issue number.
+- **Behaviour spec:** one check, no reading: is `docs/spec/README.md` on `origin/<base>` (`git cat-file -e origin/<base>:docs/spec/README.md`)? Note it in the run log. Without a spec, `<git-common-dir>/coordinator/spec-declined` or the decisions file's spec choice decide whether the handoff offers to create one (§8).
 - **Build the queue:**
   - open issues labelled `type:task` within the scope;
   - drop tickets that already have an open PR or a branch named after them, and report them as "in progress elsewhere";
-  - **hold back tickets opened by someone without write access:** one call, `gh api "repos/<repo>/issues?state=open&labels=type:task&per_page=100" --paginate --jq '.[] | "\(.number) \(.author_association)"'`, and every ticket whose association isn't `OWNER`, `MEMBER` or `COLLABORATOR`. Anyone can open an issue in a public repo and keep editing its body after it's labelled. List them for the user; one joins the run only after the user has read it and says so (record that in the run log).
-- **Fable tickets:** a ticket whose "Suggested model" is Fable can't run as suggested. Unless the run log already records the choice, ask the user once, for all of them: run with Opus, or leave them out of this run.
+  - **hold back tickets opened by someone without write access:** one call, `gh api "repos/<repo>/issues?state=open&labels=type:task&per_page=100" --paginate --jq '.[] | "\(.number) \(.author_association)"'`, and every ticket whose association isn't `OWNER`, `MEMBER` or `COLLABORATOR`. Anyone can open an issue in a public repo and keep editing its body after it's labelled. List them for the user; one joins the run only after the user has read it and says so (record that in the decisions file).
+- **Fable tickets:** a ticket whose "Suggested model" is Fable can't run as suggested. Unless the decisions file already records the choice, ask the user once, for all of them: run with Opus, or leave them out of this run.
 - **Show the user** the queue in wave order with the first wave highlighted, marking the tickets with another base (they'll stop before merging, §6) and the Fable tickets. Then start. Don't wait for approval unless something looks wrong or there are Fable tickets.
 
 ### Run log
 
 Your context can be compacted during a long run, and in-flight state lost with it. Keep it in the run log instead of relying on memory:
-- **What goes in:** the workflow in use, known baseline failures, and an entry for the ticket in flight (ticket, model, implementer agent ID, the agent's last-turn time and context size, branch, worktree path, fix rounds, state), updated **after every state change**.
-- **The spec choice** (§8, "Docs update"): `none yet`, `separate session` or `declined`, so the offer isn't repeated.
+- **What goes in:** the workflow in use and an entry for the ticket in flight (ticket, model, implementer agent ID, the agent's last-turn time and context size, branch, worktree path, fix rounds, state), updated **after every state change**.
 - **Plan drift and follow-ups** (§4, §8 "Follow-ups"): one line per accepted change to the plan (`plan drift: #<n> → <plan section>: <what changed>; commented: #a, #b`) and per follow-up created (`follow-up #<m>: <area>, parent #<story>, after #<n>`), each marked `applied` once the docs update has put it in the plan.
-- **The user's decisions** during the run go into the log, and also as a comment on each affected ticket, so later sessions see them too.
+- **The user's decisions** during the run go into the decisions file (below) when they outlive the session, otherwise into the log; also as a comment on each affected ticket, so later sessions see them too.
 - **After a compaction** (or whenever you're unsure of the state), re-read the log before acting.
 - **At a wave handoff** (§8): the waves done, `origin/<base>`'s current commit, the next wave's tickets, open items waiting on the user, and the follow-ups created. Mark the log **finished** when the scope is done.
 - **A stopped ticket** (§9) keeps its worktree, and with it the ticket notes, so a later session can continue it. The log records the worktree path.
+
+**Keep it small.** Every session reads the whole log, so finished waves move out of it. The log has these sections, in this order:
+- `## Workflow`: the workflow in use;
+- `## Open items`: what the next session does first;
+- `## Plan drift and follow-ups`: only the lines not yet `applied`;
+- `## In flight`: the ticket entries and stopped tickets' worktrees;
+- `## Previous session`: the last session's notes and its handoff, as they were written;
+- `## This session`: everything you note during this session (dispatches, fix rounds, `ship.sh`'s lines, each wave's handoff).
+
+**At a session's handoff** (§8, after writing the handoff into `This session`; a wave that continues in the same session moves nothing):
+1. Append to `run-<…>.history.md` (same name; never read it back), under `## Session <k> (waves <a>-<b>)`: `Previous session`, and the decisions, items and lines you're dropping below.
+2. Rewrite the log in the layout above. `This session` becomes `Previous session`, and the new `This session` is empty. Drop open items that are done, `applied` drift lines and merged tickets' entries.
+
+So each session reads its own state plus the session before it in full; anything older is only in the history. A log from before this layout gets the same split when a session continues it: its last SESSION and HANDOFF sections become `Previous session`, the older ones go to the history as they are, and its decisions and baseline failures that still apply move to the decisions file.
+
+### Decisions file
+
+`<git-common-dir>/coordinator/decisions.md` holds what every session of every run must know, and stays small however many waves there are: **at most 40 entries and about 4 KB** (about 1k tokens).
+- **What goes in:** the user's decisions that outlive a session (the spec choice, the Fable choice, held-back tickets let in, how to handle a recurring situation), and durable facts (known baseline failures, environment quirks, a command that must be run a certain way). One line each, at most about 200 characters: `- D<n> (<date>, <scope>): <decision>` or `- F<n> (<date>): <fact>`, scope being `project` or `run-<id>`, plus the issue or PR it came from if any.
+- **What stays out:** product or design decisions that implementers need (contracts, data shapes, names) go into the plan through plan drift, since subagents only see the repo. Ticket-only decisions go on the ticket. Progress and history go into the run log.
+- **Changing it:** a new decision that replaces an older one replaces its line (same number). Move retired lines to `decisions.history.md` (never read it back): carried-out decisions, fixed baseline failures, and the `run-<id>` decisions when that run is marked finished.
+- **Keep it under the cap:** chain `wc -l -c <file>` onto the command that writes it. Over the cap, retire what no longer applies, then merge related lines. If every line still applies, ask the user which to retire. Keep a line whenever you're unsure it still applies.
 
 ### Ticket notes
 
@@ -220,15 +242,7 @@ If the script can't be used (it's missing, or the project needs a step it doesn'
 
 ## 7. Merge conflicts
 
-Try to resolve them yourself before involving anyone.
-1. **Update the branch:**
-   - **Not pushed yet:** rebase onto `origin/<base>`.
-   - **Already pushed** (the PR exists): merge `origin/<base>` into the ticket branch, commit the merge, and push normally. Never rebase a pushed branch, since that needs a force-push.
-2. **Understand both sides:** this ticket's change and its intent, and the change on the base branch (`git log -p origin/<base>` and the merged PR and ticket behind it).
-3. **Resolve** so that **both** intents survive: combine the changes rather than taking one side, and regenerate generated files (lockfiles, migration snapshots, generated clients) with the project's tools instead of hand-merging them. If combining them needs real code changes beyond the conflict hunks, give that to a fresh implementer as a fix round, with both intents.
-4. **Re-run `ship.sh`** (§6), which runs the final gate again, and mention the resolution in the PR.
-
-**Stop and ask the user** when keeping both intents is impossible and one behaviour has to win, or the build still fails after a resolution and the cause isn't clear.
+Resolve them yourself before involving anyone: read `references/merge-conflicts.md` when a conflict happens (how to update the branch, resolve so both intents survive, and when to stop and ask).
 
 ## 8. Checkpoints and reporting
 
@@ -244,7 +258,7 @@ Try to resolve them yourself before involving anyone.
     - with `checkpoint=none`, pick the next ticket (§2) right away.
   - **Otherwise, hand off and end the session:**
     1. run the docs update (below);
-    2. write the wave handoff into the run log (see "Run log");
+    2. write the wave handoff into the run log and move the previous session to the history (see "Run log");
     3. post the wave summary below;
     4. end with this message, filled in, and stop:
 
@@ -263,53 +277,11 @@ Try to resolve them yourself before involving anyone.
 
 ### Wave smoke check
 
-Before the handoff, one subagent checks that what this wave merged actually works when the product runs. It's a **smoke check, not a test suite**: a short happy-path pass that the new pieces are there and do their main job. It doesn't cover edge cases, add tests to the repo or commit anything, so it stays within the light workflow.
-
-- **When:** after the wave's last ticket merges or stops, once per wave. **Skip it** only when the merged tickets changed nothing that runs (docs, plan, specs or CI config only), or nothing merged. Log the skip with its reason.
-- **What it checks:** for each ticket merged in this wave, the user-visible result of its acceptance criteria. New UI elements (views, panels, menus, commands, settings, status items, pages) are present and respond. New CLI commands, endpoints or hooks run and return what they should. The product starts without errors. It also re-runs, briefly, what the harness already covers from earlier waves, as a regression pass.
-- **Where:** its own worktree, `<repo>/.claude/worktrees/smoke`, detached at `origin/<base>` after the wave's merges. Prepare it with one call: `bash <skill-dir>/scripts/smoke-worktree.sh --base <base>`. The script creates the worktree on first use and resets it on later waves (tracked files back to `origin/<base>`; `node_modules` and build output stay, so later waves start faster). It adds `.claude/worktrees/` to `<git-common-dir>/info/exclude` if needed, so the persistent worktree never makes the main checkout look dirty. It also records the main checkout's state and prints `SMOKE_WORKTREE`, `SMOKE_HARNESS` and `SMOKE_AT` (the commit under test). The **harness** (scripts, a README on how to run them, its own `package.json` or similar) lives in `<git-common-dir>/coordinator/smoke-harness/`. That folder isn't committed, is shared by every worktree, and grows from wave to wave.
-- **Dispatch:** `subagent_type: "general-purpose"`, `model: "sonnet"`, `effort: "medium"`, **no isolation** (worktree isolation would refuse the harness folder, and auto-cleanup would throw the harness away). The worktree, the rules and the check afterwards replace the isolation. The prompt starts with `Smoke check wave <N>:` and gives:
-  - the smoke worktree path and the commit under test, the harness path, and the project's run commands from the workflow (e.g. the "Run locally" row of `docs/development.md`);
-  - each merged ticket in one or two lines: what changed and what to check, taken from its PR and acceptance criteria;
-  - the rules:
-    - **first, `cd` into the smoke worktree** and run every command from there, using absolute paths;
-    - work only in the smoke worktree, the harness folder and temp dirs. **The main checkout (`<main checkout path>`) and the ticket worktrees are off limits:** never read from, write to or run git in them;
-    - never commit, push, open PRs or change branches; in the smoke worktree, never edit tracked files (build output and `node_modules` are fine);
-    - never touch the user's real config or home: use temp dirs, e.g. a temp `HOME`, `CLAUDE_CONFIG_DIR` or the project's own override such as `COMPOSER_HOME`;
-    - don't fix product code; report what's broken instead;
-    - extend the harness and keep its README current; keep long output in log files;
-  - the report, at most about 40 lines: one line per check, marked `PASS`, `FAIL` or `NOT CHECKABLE` (with why). For each FAIL, steps to reproduce and whether it looks like a product bug or a harness problem. Then the harness changes.
-- **Check the boundary afterwards:** `bash <skill-dir>/scripts/smoke-worktree.sh --verify` (chain it onto your next command). It compares the main checkout with the state recorded before the dispatch. If it prints `CHANGED`, the agent broke its rules. Restore the main checkout (`git checkout -- <path>` for tracked files; remove only files that the diff shows are new), note it in the handoff, and treat that smoke result as unreliable.
-- **Results:**
-  - **All pass:** note it in the handoff.
-  - **A product bug in code merged during this run:** create a follow-up issue (see "Follow-ups") with the reproduction steps, and list it as an open item for the next session to run first. Don't fix it in this session.
-  - **The product doesn't start at all:** create the follow-up as above, and also call it out first in the handoff message.
-  - **Unconfirmed or harness-only problems:** list them under "open items" in the handoff, without a ticket. The user decides.
-- **Log it:** the result, the harness changes and what couldn't be checked go into the wave handoff in the run log, plus one `smoke_check` event chained onto the handoff's command.
+After the wave's last ticket merges or stops, once per wave, one Sonnet subagent checks that what this wave merged works when the product runs: a short happy-path pass over this wave's tickets only, never earlier waves'. **Skip it** only when the merged tickets changed nothing that runs (docs, plan, specs or CI config only), or nothing merged; log the skip with its reason. Otherwise read `references/smoke-check.md` and follow it (worktree, harness, dispatch, boundary check, results).
 
 ### Docs update
 
-The behaviour spec (`docs/spec/`, format: `~/.claude/skills/init-spec/references/spec-format.md`) says how the product behaves now; the plan (`docs/plans/`) says what later tickets build on. Implementers edit neither. You bring both up to date **once per session, at the handoff** (and at the end of the run, §9), in one docs PR: one update covers every wave since the spec's `Synced to` commit and every plan entry in the run log not yet `applied`, so waves that share a session share one update. Keep it cheap: you don't read the spec or its diff, only the writer's report, and you read only the plan sections you change.
-
-1. **Decide the parts:**
-   - **Spec part** when the project has a spec and the tickets merged since the last update changed something that runs (the smoke check's skip rule). Otherwise log `spec` with `result: no-change` (or `missing`, below).
-   - **Plan part** when the project has `docs/plans/` and the run log has plan drift or follow-up lines not yet `applied`. Otherwise log `plan` with `result: no-change`.
-   - Neither: no worktree, no PR.
-2. **Worktree**, one call: `git worktree add -b docs/wave-<N> <repo>/.claude/worktrees/docs origin/<base> && mkdir -p <repo>/.claude/worktrees/docs/.scratch` (remove a leftover at that path first; `.claude/worktrees/` is already excluded by the smoke worktree script).
-3. **Spec part: dispatch one `spec-writer`** (`model: "sonnet"`, `effort: "medium"`, no isolation). Prompt: `Spec update wave <N>:`, the worktree, the base, the target commit (`origin/<base>`), and per merged ticket one line: number, PR, its spec change IDs (from the ticket's "Spec changes"; none for older tickets). Add the smoke check's confirmed failures with their follow-up issues.
-   - **Act on its report:** a **mismatch** (the code doesn't do what a delta said) that looks like a bug becomes a follow-up as in the smoke check's results; one where the code is fine and the delta was wrong is only listed in the handoff.
-4. **Plan part: edit the plan yourself** in the worktree, while the writer runs. Find each place with `grep -n` and read only that section. Area plans and the main plan follow `~/.claude/skills/decompose-feature/references/area-plan-template.md` and `plan-template.md`; an older single plan document is edited in place.
-   - **Each drift line:** the merged ticket's task entry (its details and spec changes as merged), and the decision or contract it overrode (area plan §3-4, main plan §4-5), noting `changed in #<n>`. Then the task entries of the tickets you commented on, so they match the comment.
-   - **Each follow-up:** a task entry `<area>.T<next>` with its issue number in the area plan (the hierarchy and the task details), and its place in the main plan's order of work: the earliest wave after its dependencies.
-   - Change nothing else: finished tasks' entries stay as history, apart from the drift above.
-   - Mark the lines `applied` in the run log once the PR merges.
-5. **Ship it** in one call: write the PR body (the spec item counts and mismatches, the plan changes in a few lines) and run `<skill-dir>/scripts/ship.sh --doc wave-<N> --worktree <repo>/.claude/worktrees/docs --base <base> --repo <owner/repo> --title "Update docs for wave <N>" --message "docs: update <spec and plan | spec | plan> for wave <N>" --body-file <file> --runlog "<run log>"` with the merge method, no gates (docs only) and no `--events`. Chain the `spec` event (`result: updated`, the mismatch count) and the `plan` event (`result: updated`, the entry count) onto it, for the parts that ran.
-
-**The project has no spec** (`docs/spec/README.md` isn't on `origin/<base>`): unless `<git-common-dir>/coordinator/spec-declined` exists or the run log records a choice, offer to create one, once per run, in the handoff message (a `user_wait` with reason `checkpoint`). With `checkpoint=none` and a wave continuing in this session, the offer waits for the next handoff; it never stops a wave. Say in two sentences what the spec is (how the product behaves now, one file per area, kept current at each handoff, and where the plans' spec changes land) and what creating it costs (the `init-spec` skill: one Sonnet agent per area reading that part of the code, roughly $0.3-1.5 per area). It always runs in its own session, never in this one: its scan would land in your context. Options:
-- **Create it in a separate session** (recommended): record it in the run log, and tell the user to run `/clear` and `/init-spec` (on Sonnet is enough) before the next `/coordinator`, or whenever they like. Don't offer it again in this run; one line in each later handoff reminds them while the spec is missing.
-- **Not for this project:** write `<git-common-dir>/coordinator/spec-declined` (local, never committed), so no later run asks; deleting it re-enables the offer.
-
-Log `spec` with `result: missing` at every handoff while the spec is missing, with the `choice` the first time; the analyzer uses it to tell a missing spec from a skipped update. The tickets' spec changes stay in the plan either way; the first update after the spec exists picks up everything merged since its `Synced to`.
+Once per session, at the handoff (and at the end of the run, §9), bring the behaviour spec (`docs/spec/`) and the plan (`docs/plans/`) up to date in one docs PR: a `spec-writer` for the spec, your own edits for the plan's drift and follow-up lines, and the `spec`/`plan` events. Read `references/docs-update.md` and follow it; it also covers offering a spec when the project has none.
 
 ## 9. Stop when
 

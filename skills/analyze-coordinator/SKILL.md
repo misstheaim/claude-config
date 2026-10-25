@@ -14,7 +14,7 @@ You evaluate how a `/coordinator` run went and where the setup should improve. T
 ## Where the data is
 
 - **Event log** (judgments): `<git-common-dir>/coordinator/run-<…>.events.jsonl`, written by the coordinator (format: `~/.claude/skills/coordinator/references/events.md`). Reviews and triage (full-workflow runs only), escalations, waits, final gates, conflicts, stopped tickets, wave handoffs. Everything mechanical (which subagent worked on which ticket and in what role, fix rounds, PRs, CI) comes from the transcripts instead; merges come from the `merged` events that `ship.sh` writes, or from the transcripts (`gh pr merge`, or a `ship.sh` call ending in `RESULT: 0 merged`).
-- **Run log** (context): `run-<…>.md` next to it, the coordinator's own notes and decisions.
+- **Run log** (context): `run-<…>.md` next to it, the coordinator's current state and the last two sessions' notes; older sessions are in `run-<…>.history.md`. The user's decisions and durable facts are in `decisions.md` (shared by all runs). Read the history only for a question about an older session.
 - **Transcripts** (facts): `~/.claude/projects/<sanitized repo path>/<session>.jsonl` for each coordinator session (one per wave), and `<session>/subagents/agent-<id>.jsonl` + `.meta.json` for each subagent: token usage per API call, models, timing, tool calls and errors, permission prompts, interrupts, compactions.
 
 **Don't read transcripts into your context.** They're megabytes. The script below extracts everything; open a transcript only for a targeted look (e.g. `grep` one agent's failed tool calls) when a number needs explaining.
@@ -25,9 +25,9 @@ You evaluate how a `/coordinator` run went and where the setup should improve. T
 python ~/.claude/skills/analyze-coordinator/scripts/collect.py --repo <repo> [--run <name>] [--session <id> ...]
 ```
 
-It writes `<run>.metrics.json` next to the run log and prints a summary. Costs use API list prices (in the script's `PRICES`); on a subscription they're an API-equivalent estimate, so say so. If it reports missing data (no event log, sessions not found, unpriced models), carry on with what's there and list the gaps in the report.
+It writes `<run>.metrics.json` next to the run log and prints a **digest**: totals, flags, notes, per-session and per-ticket tables, the outlier agents, and a trends table of the last 10 runs, built from the earlier `*.metrics.json` in the same folder. Costs use API list prices (in the script's `PRICES`); on a subscription they're an API-equivalent estimate, so say so. If it reports missing data (no event log, sessions not found, unpriced models), carry on with what's there and list the gaps in the report.
 
-Read the metrics JSON. Also look for earlier `*.metrics.json` in the same folder: if there are any, compare (cost per merged ticket, interruptions per ticket, fix rounds, coordinator share) and call out trends.
+**Work from the digest.** Don't read the metrics JSON or the earlier ones whole: they grow with every run. When a number needs explaining, pull just that part, e.g. `python -c "import json; m=json.load(open('<metrics>')); print([a for a in m['agents'] if a['ticket'] == 84])"`. Call out the trends that matter (cost per merged ticket, interruptions, fix rounds, coordinator share).
 
 ## 2. Analyse
 
