@@ -14,6 +14,8 @@ Behaviour spec (added 2026-10-23, after archiving): the decomposer writes a main
 
 Flat per-session cost (added 2026-10-25, same as the light versions): the run log keeps only the current and previous session (older ones in `run-<id>.history.md`), standing decisions and facts live in a capped `decisions.md` shared by all runs, the analyzer works from a digest printed by `collect.py` instead of reading the metrics JSON, and finished waves collapse into a `Done:` line in the main plan's order of work (shipped with the wave spec update).
 
+CI mode (added 2026-10-26): the decomposer asks which CI mode a project uses (`every PR`, `release builds` or `none`) and records it in `docs/development.md` §9; the coordinator reads it (or asks once) and passes `ship.sh --skip-ci` on PRs the mode doesn't cover. The light versions always use `release builds`.
+
 Shared with the light workflow, not archived: `skills/create-ticket` (added 2026-10-25) reads the ticket template and `github.md` from whichever `decompose-feature` is installed, and adds test cases only when that is the full version. `implement-ticket` in both versions updates the spec and the plan on the user's approval in interactive mode (step 8).
 
 Nothing here is loaded: Claude Code only reads skills from `~/.claude/skills/` and agents from `~/.claude/agents/`.

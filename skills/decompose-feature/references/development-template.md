@@ -76,14 +76,14 @@ Each GitHub milestone is one release:
 1. Every ticket in the milestone is closed and `develop` is green.
 2. Cut the release branch: `git fetch origin develop`, `git switch -c release/X.Y.Z origin/develop`. Bump the version, update `CHANGELOG.md`, push, and open a PR into `main`.
 3. Only fixes go into the release branch (PRs into `release/X.Y.Z`), each also needed on `develop` (it comes back with step 5).
-4. When it's ready: merge the PR into `main` (merge commit), tag `vX.Y.Z` on `main`, and publish a GitHub release with the changelog.
+4. When CI on the PR is green and it's ready: merge the PR into `main` (merge commit), tag `vX.Y.Z` on `main`, and publish a GitHub release with the changelog.
 5. Merge `main` back into `develop`, delete the release branch, and close the milestone.
 
 ## 6. Hotfix process
 
 1. A ticket labelled `hotfix` describes the bug in the released version.
 2. Branch `hotfix/<n>-<slug>` from the latest `origin/main`. Fix the bug, bump PATCH, and update `CHANGELOG.md`.
-3. PR into `main`; merge (merge commit), tag, publish the release.
+3. PR into `main`; once CI on it is green, merge (merge commit), tag, publish the release.
 4. Merge `main` back into `develop`, and into the open `release/*` branch if there is one.
 
 ## 7. Approvals
@@ -98,4 +98,10 @@ The owner explicitly approves every step that merges into `main` or a `release/*
 
 ## 9. CI
 
-<What runs on PRs into `develop`, `release/*` and `main`. Until CI exists, run build and lint locally before every merge.>
+CI runs **only for release builds**: PRs into `main` and `release/*`<, and version tags `v*` (to build the release artifacts)>. Ticket PRs into `develop` get no CI: the coordinator's final gate runs build and lint locally on the branch updated to the latest `develop` before every merge, so CI there would only repeat it.
+
+| Workflow | Runs on | Steps |
+|---|---|---|
+| <`.github/workflows/release.yml`> | <PRs into `main` and `release/*`> | <install, build, lint, package> |
+
+<Until the CI task is done, run build and lint locally before merging a release PR.> Branch protection, if any, requires these checks on `main` and `release/*` only.

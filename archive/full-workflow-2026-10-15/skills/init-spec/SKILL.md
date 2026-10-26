@@ -63,7 +63,7 @@ Add the **"Behaviour spec" section** from `references/spec-format.md` to the pro
 
 ## 7. Ship it
 
-Commit (`docs: add behaviour spec`), push, open a PR into `<base>` with a short summary (areas, item counts, what couldn't be checked), wait for CI, merge with the workflow's method, and remove the worktree. The user's rules apply: show the commit, push, PR and merge as one batch and ask before running it.
+Commit (`docs: add behaviour spec`), push, open a PR into `<base>` with a short summary (areas, item counts, what couldn't be checked), wait for CI only if the project's CI mode is `every PR` (the coordinator's "CI mode"), merge with the workflow's method, and remove the worktree. The user's rules apply: show the commit, push, PR and merge as one batch and ask before running it.
 
 ## 8. Report
 

@@ -56,6 +56,12 @@ Discuss, don't decide alone. Over as many rounds as needed:
 - For every significant design decision (architecture, data model, libraries, API shape, UI approach, hosting), present the reasonable **alternatives** with concrete **pros and cons** for this project, and say which one you **recommend and why**. Wait for the user's choice.
 - Raise risks, unknowns and things that need a spike (a short research task) early.
 - **New project:** agree on the releases: which milestones (e.g. MVP, 1.0) and their versions (Semantic Versioning; recommend `0.1.0` for an MVP and `1.0.0` for the first stable release), and what goes into each. Explain the branching workflow from `references/development-template.md` (Git Flow: `main` holds only released, tagged code; `develop` integrates every ticket PR; short-lived `release/*` and `hotfix/*` branches) and confirm it, or agree on a simpler one if the user prefers.
+- **CI mode** (a new project, or an existing one whose `docs/development.md` has no "CI mode" line): ask the user with `AskUserQuestion`, one option each, saying what runs where and what it costs:
+  - **Every PR (Recommended when there's a test suite):** build, lint and the full test suite on every PR (into `develop`, `release/*` and `main`); the coordinator waits for it before each merge. Catches problems a local run hides (a clean machine, another OS), at the cost of CI minutes and a few minutes' wait per ticket.
+  - **Release builds only:** CI on PRs into `main` and `release/*` (and version tags, if releases publish artifacts); ticket PRs into `develop` rely on the coordinator's local final gate. Cheaper and faster, but environment problems surface only at release time.
+  - **No CI for now:** no CI task; every check is local. Can be added later with a ticket.
+
+  Record the answer as the CI mode (`every PR`, `release builds` or `none`); the coordinator reads it (its "CI mode").
 - Keep a running list of decisions taken; it goes into the plan (cross-area decisions into the main plan, the rest into the area plans).
 
 Only move on when the feature is clear enough that you could explain every part of it to a developer who wasn't in the conversation.
@@ -78,6 +84,7 @@ Rules:
   - the real commands in `docs/development.md` and `CLAUDE.md`, replacing the planned ones.
 
   Keep it small enough for one Sonnet session: CI, environments and deployment go into their own tasks. Mark any manual step (an account, a secret, an install) in the ticket.
+- **CI task:** set up CI to match the agreed CI mode (Phase 2): its triggers (every PR, or only PRs into `main` and `release/*`) and steps (build, lint, the full test suite, release packaging). With `none`, no CI task. If branch protection is planned, it requires the checks only on the branches the mode covers.
 - **Milestones:** every task belongs to one milestone (release) from the plan.
 - **Split until every leaf is session-sized.** That is the main test: if a piece could not realistically be finished, tested and reviewed in a single session, split it further, into sub-stories or tasks. Add a level (story under story) only when a story is still too big; don't add levels for their own sake.
 - **Good stories** are independent, valuable on their own, small enough to estimate and testable (INVEST).
@@ -111,7 +118,7 @@ When the project has several areas that each need real design work, don't design
 ### New project: workflow files
 
 A new project also gets three more files in its folder, written now from the plan's decisions:
-- **`docs/development.md`** from `references/development-template.md`: requirements, the planned commands, the branching workflow, the milestones with their versions, and the release, hotfix and approval rules. Adapt it to what was agreed; don't leave template placeholders in it.
+- **`docs/development.md`** from `references/development-template.md`: requirements, the planned commands, the branching workflow, the milestones with their versions, the release, hotfix and approval rules, and the CI section with the agreed CI mode. Adapt it to what was agreed; don't leave template placeholders in it.
 - **`CLAUDE.md`** at the project root from `references/project-claude-template.md`: what the project is, the stack, the workflow rules (base branch `develop`, hotfixes from `main`), an import of `docs/development.md`, where the plan and tickets live, the **"Behaviour spec" rules**, and the conventions from the plan's decisions.
 - **`docs/spec/README.md`**, the behaviour spec's index, from `~/.claude/skills/init-spec/references/spec-format.md`: the overview and the areas from the plan (no area files yet), the glossary, "How to edit this spec", and under the areas the line "Nothing is implemented yet." Each area file is created by the first spec update that has behaviour for it.
 
