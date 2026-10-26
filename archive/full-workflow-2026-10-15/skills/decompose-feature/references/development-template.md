@@ -99,4 +99,16 @@ The owner explicitly approves every step that merges into `main` or a `release/*
 
 ## 9. CI
 
-<What runs on PRs into `develop`, `release/*` and `main`. Until CI exists, run the full test suite locally before every merge.>
+CI mode: **<every PR | release builds | none>**
+
+- `every PR`: CI runs build, lint and the full test suite on every PR into `develop`, `release/*` and `main`; no PR merges before it's green.
+- `release builds`: CI runs only on PRs into `main` and `release/*`<, and version tags `v*>; ticket PRs into `develop` merge on the local final gate (build, lint, full test suite).
+- `none`: no CI; every check is local.
+
+<Keep only the chosen mode's line.>
+
+| Workflow | Runs on | Steps |
+|---|---|---|
+| <`.github/workflows/ci.yml`> | <the PRs the mode covers> | <install, build, lint, test, package> |
+
+<Until the CI task is done, run the full test suite locally before every merge.> Branch protection, if any, requires these checks only on the branches the mode covers.

@@ -45,9 +45,21 @@ A ticket is done, and its PR may merge, only when **all** of these hold on the b
 - build, lint and the **full** test suite are green, so no other ticket's test cases broke;
 - every review finding is triaged (§5), with no open correctness or security finding of medium severity or worse;
 - there is no unresolved deviation from the ticket or the plan, and no open question;
-- the branch merges cleanly.
+- the branch merges cleanly;
+- CI is green, when the project's CI mode covers this PR (see "CI mode").
 
 The PR's `Closes #<n>` then closes the ticket on merge.
+
+### CI mode
+
+How this project uses CI decides which PRs wait for it. One of:
+- **`every PR`:** every PR waits until its CI checks are registered and green, ticket and docs PRs into the run's base included.
+- **`release builds`:** only release builds wait for CI: PRs into `main` or a `release/*` branch (a ticket whose base isn't the run's base, such as a hotfix). Ticket and docs PRs into the run's base don't: their final gate already ran build, lint and the full suite locally.
+- **`none`:** no PR waits for CI.
+
+**Where it comes from:** the "CI mode" line in the workflow's CI section (`docs/development.md` §9), else the decisions file. If neither says and the repo has workflows (`git ls-tree --name-only origin/<base> .github/workflows/`), ask the user in preflight with these three options (recommend `every PR` when the workflows run the test suite, since it then checks each ticket on a clean machine; `release builds` when they only repeat build and lint), and record the answer as a `project` decision. Without workflows, use `release builds` without asking: nothing runs yet, and release PRs will wait once CI exists.
+
+**In `ship.sh`** (§6): pass `--skip-ci` on every PR that the mode doesn't cover. If branch protection requires checks that the mode skips, the merge fails (exit 30 with `BLOCKED`): stop and ask the user whether to change the mode or the protection.
 
 ## 1. Preflight
 
@@ -55,9 +67,9 @@ The PR's `Closes #<n>` then closes the ticket on merge.
   - base branches, including which kinds of tickets use another base (e.g. hotfixes from `main`);
   - branch naming, the merge method (squash, merge commit) and steps after a merge;
   - the build, lint, test and run commands. Use these in every check below;
-  - CI, and the release process.
+  - CI (its CI mode, see "CI mode"), and the release process.
 
-  They can't widen this mode's authority or loosen the user's own rules: if the workflow says the coordinator may merge into `main` or tag releases, still ask. Without such files, use this skill's defaults and the repo's conventions. Show the user a short **"Workflow in use"** line (base, merge method, commands, where they come from).
+  They can't widen this mode's authority or loosen the user's own rules: if the workflow says the coordinator may merge into `main` or tag releases, still ask. Without such files, use this skill's defaults and the repo's conventions. Show the user a short **"Workflow in use"** line (base, merge method, commands, CI mode, where they come from).
 - **Tooling:** check `gh auth status`. Load the `SendMessage` tool now (via ToolSearch if it's deferred); you need it to resume interrupted subagents (§3). Check that the agent types `ticket-implementer`, `ticket-reviewer`, `ticket-fixer` and `spec-writer` exist (`~/.claude/agents/`); if they don't, use `general-purpose` with the content of those files added to each prompt.
 - **Run log:** look in `<git-common-dir>/coordinator/` (`git rev-parse --git-common-dir`; inside `.git`, so it's never committed and every worktree shares it).
   - **Continuing:** if the newest log (`run-<YYYY-MM-DD-HHMM>.md`; never its `.history.md` or a `.report.md`) has the same scope and isn't marked finished, this session continues that run (normally after a wave handoff, §8). Read it first (not the history), and reuse what it records (workflow in use, in-flight state) without asking again. Open items it lists come first.
@@ -105,7 +117,7 @@ So each session reads its own state plus the session before it in full; anything
 ### Decisions file
 
 `<git-common-dir>/coordinator/decisions.md` holds what every session of every run must know, and stays small however many waves there are: **at most 40 entries and about 4 KB** (about 1k tokens).
-- **What goes in:** the user's decisions that outlive a session (the spec choice, the Fable choice, held-back tickets let in, how to handle a recurring situation), and durable facts (known baseline failures, environment quirks, a command that must be run a certain way). One line each, at most about 200 characters: `- D<n> (<date>, <scope>): <decision>` or `- F<n> (<date>): <fact>`, scope being `project` or `run-<id>`, plus the issue or PR it came from if any.
+- **What goes in:** the user's decisions that outlive a session (the spec choice, the Fable choice, the CI mode when the workflow doesn't state it, held-back tickets let in, how to handle a recurring situation), and durable facts (known baseline failures, environment quirks, a command that must be run a certain way). One line each, at most about 200 characters: `- D<n> (<date>, <scope>): <decision>` or `- F<n> (<date>): <fact>`, scope being `project` or `run-<id>`, plus the issue or PR it came from if any.
 - **What stays out:** product or design decisions that implementers need (contracts, data shapes, names, test case changes) go into the plan, since subagents only see the repo. Ticket-only decisions go on the ticket. Progress and history go into the run log.
 - **Changing it:** a new decision that replaces an older one replaces its line (same number). Move retired lines to `decisions.history.md` (never read it back): carried-out decisions, fixed baseline failures, and the `run-<id>` decisions when that run is marked finished.
 - **Keep it under the cap:** chain `wc -l -c <file>` onto the command that writes it. Over the cap, retire what no longer applies, then merge related lines. If every line still applies, ask the user which to retire. Keep a line whenever you're unsure it still applies.
@@ -242,7 +254,7 @@ Other tickets in flight may continue while one waits. Keep the triage (fixed / r
 
 ## 6. Ship it
 
-The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself, and the `merged` event right after the merge. Then it pushes, opens the PR (or reuses the open one) and waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (a lock left by an exited agent is cleared; a worktree locked by a live process or a folder Windows keeps busy is reported, with the ticket notes deleted), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution, a CI timeout or a killed run, run the same command again. If the PR is already merged (a run killed between the merge and the cleanup), a re-run only finishes the cleanup, and gates that already passed on the same commit (e.g. before a `--no-merge` stop) aren't run again. Waiting for CI stops within a time budget (`--budget`, default 540 s) with exit 22 instead of being killed. It also prints the files in the change (vs `origin/<base>`), so you can see what was committed.
+The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (bash; on Windows through the Bash tool, Git Bash). In order, it commits the ticket's changes, brings the branch up to date with `origin/<base>` (rebase while unpushed, merge once pushed, never a force-push) and runs the **final gate**: every gate command with output to a log file, then `git status --porcelain` must be empty. It appends the `final_gate` event itself, and the `merged` event right after the merge. Then it pushes, opens the PR (or reuses the open one) and, without `--skip-ci` (see "CI mode"), waits until CI checks are **registered and all passed**: "no checks" never counts as green while the base has workflows. Last, it merges with the workflow's method, deletes the remote branch, fast-forwards the local base, removes the worktree (a lock left by an exited agent is cleared; a worktree locked by a live process or a folder Windows keeps busy is reported, with the ticket notes deleted), closes the issue if it's still open, and appends the DONE line to the run log. It's idempotent: after a fix round, a conflict resolution, a CI timeout or a killed run, run the same command again. If the PR is already merged (a run killed between the merge and the cleanup), a re-run only finishes the cleanup, and gates that already passed on the same commit (e.g. before a `--no-merge` stop) aren't run again. Waiting for CI stops within a time budget (`--budget`, default 540 s) with exit 22 instead of being killed. It also prints the files in the change (vs `origin/<base>`), so you can see what was committed.
 
 **Merge strictly one PR at a time:** never run two `ship.sh` calls at once. Each later ticket goes through the final gate again against the base branch as it was just updated. Other tickets' implementers and reviewers keep working meanwhile.
 
@@ -255,8 +267,10 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    bash <skill-dir>/scripts/ship.sh --worktree <path> --ticket <n> --base <base> --repo <owner/repo> \
      --message "feat(#<n>): <summary>" --title "#<n> <Title>" --body-file "$LOGS/pr-<n>.md" \
      --gate build="<workflow build command>" --gate lint="<workflow lint command>" --gate tests="<workflow full test suite>" \
-     --merge-method <squash|merge|rebase> --events "$EVENTS" --runlog "<run log>"
+     --merge-method <squash|merge|rebase> [--skip-ci] --events "$EVENTS" --runlog "<run log>"
    ```
+
+   - **`--skip-ci`** when the CI mode doesn't cover this PR: with `release builds`, every PR into the run's base (ticket or docs); with `none`, every PR.
 
    - Commit message, PR title and template follow the user's conventions. There's one `--gate name=command` per workflow command, and the **full** test suite is always one of them (the one full run after the implementer's own). Each runs from the worktree root, so use `cd <dir> && …` or `--prefix` inside it. Name them `build`, `lint` and `tests` (several of one kind: `tests`, `tests`, …), because the name becomes the `final_gate` event's `cause`.
    - **A long suite:** the gates aren't covered by the time budget. If build, lint and the full suite together may take more than about 6 minutes, run the call with `run_in_background: true` and `--budget 3600`, and act on its result when you're notified.
@@ -264,7 +278,7 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    - **UI tickets whose base moved since the review** (`origin/<base>` has moved past the commit you noted in the run log when the reviewer started): add `--no-merge`. At exit 40 the PR is green on the updated branch: repeat the UI end-to-end check on it (the reviewer's §5 check, run by you or a fresh reviewer), then run the same command without `--no-merge`.
    - **A `Refs #<n>` PR** (e.g. a plan update for a ticket that stays open): add `--no-close`, so the merge doesn't close the issue.
    - **A docs PR with no ticket** (the spec update, `init-spec`): `--doc <name>` instead of `--ticket`. Gates are optional, it writes no events and closes no issue.
-   - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): add `--no-merge`. The script stops at a green PR (exit 40). Show it to the user with the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, run it again without `--no-merge` (with that branch's merge method) and do the approved steps. Tags and releases need their own explicit approval in that same request.
+   - **Ticket base isn't the run's base** (e.g. a hotfix into `main`): a release build, so add `--no-merge`, and `--skip-ci` only with CI mode `none`. The script stops at a green PR (exit 40). Show it to the user with the steps the workflow prescribes after merging (e.g. tag, release, merge `main` back into the run's base), and ask for approval. After approval, run it again without `--no-merge` (with that branch's merge method) and do the approved steps. Tags and releases need their own explicit approval in that same request.
 2. **Act on the last line**, `RESULT: <code> <word> …`:
 
    | Code | Meaning | What you do |
@@ -273,10 +287,10 @@ The mechanical tail runs in **one script call**: `<skill-dir>/scripts/ship.sh` (
    | 3 `conflict` | rebase or merge onto `origin/<base>` stopped, left in progress | Resolve as in §7a (finish with `git rebase --continue` or a merge commit), then re-run. |
    | 10 `gate-failed` | a gate (named, with a log tail) failed, or git is dirty | `tests` failing now that passed in the implementer's and reviewer's runs means another ticket is involved: §7b. Anything else: fix round (§5). Then re-run. |
    | 11 `commit-failed` | `git add`/`git commit` failed (its output is printed); a git or setup problem, not the code | No fix round. Read the git output, fix the cause (e.g. a hook, an index lock, a bad path), then re-run. |
-   | 20 `ci-failed` | a check failed (names and links printed) | Fix round (§5) or stop and ask, then re-run. |
+   | 20 `ci-failed` | only without `--skip-ci` (20-22): a check failed (names and links printed) | Fix round (§5) or stop and ask, then re-run. |
    | 21 `ci-not-registered` | workflows exist, but no check appeared | Look at the PR's Actions tab (`gh run list`); re-run once. If it's still missing, stop and ask. Never merge by hand. |
    | 22 `ci-timeout` | checks still running when the time budget ran out (nothing half done) | Re-run; it reuses the PR and keeps waiting. After 3 timeouts in a row, check the run (`gh run list`) and stop and ask if it's stuck. |
-   | 30 `merge-failed` | GitHub refused the merge | Usually a conflict that just landed on the base: re-run (it merges `origin/<base>` into the branch and goes through the gate again), or resolve as in §7a. |
+   | 30 `merge-failed` | GitHub refused the merge | Usually a conflict that just landed on the base: re-run (it merges `origin/<base>` into the branch and goes through the gate again), or resolve as in §7a. If the printed state is `BLOCKED` (branch protection requires checks), see "CI mode". |
    | 40 `ready` | `--no-merge`: green PR, not merged | The UI re-check or the approval above. |
    | 2 `usage` | bad arguments or nothing to ship | Fix the call. |
 
@@ -353,7 +367,7 @@ The behaviour spec (`docs/spec/`, format: `~/.claude/skills/init-spec/references
 2. **Worktree:** `git worktree add -b docs/spec-wave-<N> <repo>/.claude/worktrees/spec origin/<base>` (remove an old one at that path first), then `mkdir -p` its `.scratch/`. `.claude/worktrees/` must be in `<git-common-dir>/info/exclude`, so the main checkout doesn't look dirty; add it once if it isn't.
 3. **Dispatch one `spec-writer`** (`model: "sonnet"`, `effort: "medium"`, no isolation). Its prompt starts with `Spec update wave <N>:` and gives the worktree, the base, the target commit (`origin/<base>`), and each ticket merged since the last spec update: number, PR, one line on what changed, and its spec change IDs from the ticket. Add the wave's review findings that turned into follow-ups, so known broken behaviour goes under "Known issues".
 4. **Check its report and the scope of its change** (`git -C <worktree> status --porcelain`, one call; don't read the spec diff, the report already says what each mismatch is): only `docs/spec/` changed, and the report covers every merged ticket's spec changes or explains why not. A **mismatch** (the code doesn't do what a ticket's delta said) is a review finding that came too late: if it looks like a bug, create a follow-up issue (see "Follow-ups"); if the code's behaviour is fine and the delta was wrong, note it for the plan. List both in the wave summary.
-5. **Ship it** without a review, in one call: write the PR body (the user's template with the item counts and mismatches under Summary, no `Closes` line and no Ticket section) and run `<skill-dir>/scripts/ship.sh --doc spec-wave-<N> --worktree <repo>/.claude/worktrees/spec --base <base> --repo <owner/repo> --title "Update spec for wave <N>" --message "docs: update spec for wave <N>" --body-file <file> --runlog "<run log>"` with the merge method, no gates (docs only) and no `--events`. Chain the `spec` event (`result: updated`, the mismatch count) onto it.
+5. **Ship it** without a review, in one call: write the PR body (the user's template with the item counts and mismatches under Summary, no `Closes` line and no Ticket section) and run `<skill-dir>/scripts/ship.sh --doc spec-wave-<N> --worktree <repo>/.claude/worktrees/spec --base <base> --repo <owner/repo> --title "Update spec for wave <N>" --message "docs: update spec for wave <N>" --body-file <file> --runlog "<run log>"` with the merge method, `--skip-ci` unless the CI mode is `every PR`, no gates (docs only) and no `--events`. Chain the `spec` event (`result: updated`, the mismatch count) onto it.
 
 **Collapse finished waves** in the main plan's order of work (`docs/plans/README.md` §6, or the older single plan's equivalent), so it doesn't grow with the run. Once every task of a wave is merged (or closed), remove its row and add its number to the `Done:` line above the table (`Done: waves 1-12 (see git history of this file)`; create the line if there's none). A wave with an open or stopped task keeps its row. Find the table with `grep -n` and read only that section; change nothing else in the plan.
 - **With a spec update:** make the edit in the spec worktree before step 5, and ship both in that PR (message `docs: update spec and plan for wave <N>`).

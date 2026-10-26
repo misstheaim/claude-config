@@ -6,11 +6,14 @@
 #           --gate build="npm --prefix extension run build" --gate lint="cd helper && golangci-lint run" \
 #           [--message "feat(#N): summary"] [--repo OWNER/REPO] [--merge-method squash|merge|rebase] \
 #           [--events FILE] [--runlog FILE] [--logdir DIR] [--ci-register-timeout SEC] [--budget SEC] [--no-merge] [--no-close]
+#           [--skip-ci]
 #   ship.sh --worktree PATH --doc NAME --base BRANCH --title ... --body-file FILE --message ... [same options; --gate optional]
 #
 # --doc NAME: a docs PR with no ticket (e.g. the spec update "spec-wave-3"): no issue to close, no events, gates
 #   optional; NAME labels the logs, the run log line and the result.
 # --no-close: merge but leave the issue open (a "Refs #N" PR, e.g. a plan update for a ticket that isn't done).
+# --skip-ci: don't wait for CI checks (the project runs CI only for some PRs, e.g. release builds); the final gate
+#   is then the only check before the merge.
 # --events: append the final_gate event after the gate and a merged event right after the merge.
 #
 # Idempotent: re-run it after a fix round, a conflict resolution, a CI timeout or a killed run and it picks up
@@ -38,7 +41,7 @@ die() { echo "RESULT: $1 $2${3:+ $3}"; exit "$1"; }
 log() { echo "ship: $*"; }
 
 WT="" TICKET="" DOC="" BASE="" TITLE="" BODY="" MSG="" REPO="" METHOD="squash" EVENTS="" RUNLOG="" LOGDIR=""
-REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0 NO_CLOSE=0
+REG_TIMEOUT=120 BUDGET=540 NO_MERGE=0 NO_CLOSE=0 SKIP_CI=0
 GATES=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,6 +62,7 @@ while [ $# -gt 0 ]; do
     --budget) BUDGET="$2"; shift 2 ;;
     --no-merge) NO_MERGE=1; shift ;;
     --no-close) NO_CLOSE=1; shift ;;
+    --skip-ci) SKIP_CI=1; shift ;;
     *) die 2 usage "unknown argument: $1" ;;
   esac
 done
@@ -262,7 +266,9 @@ fi
 # 6. CI: wait until checks are registered AND all passed. "No checks" is never treated as green while workflows exist.
 HAS_CI=0
 [ -n "$(g ls-tree --name-only "origin/$BASE" .github/workflows/ 2>/dev/null)" ] && HAS_CI=1
-if [ $HAS_CI -eq 1 ]; then
+if [ $SKIP_CI -eq 1 ]; then
+  log "CI: not waited for (--skip-ci)"
+elif [ $HAS_CI -eq 1 ]; then
   waited=0
   while :; do
     # gh exits non-zero while checks are pending or absent; only the printed count matters

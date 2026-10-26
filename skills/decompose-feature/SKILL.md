@@ -80,6 +80,7 @@ Rules:
   - the real commands in `docs/development.md` and `CLAUDE.md`, replacing the planned ones.
 
   Keep it small enough for one Sonnet session: CI, environments and deployment go into their own tasks. Mark any manual step (an account, a secret, an install) in the ticket.
+- **CI only for release builds.** A CI task sets up workflows that run on PRs into `main` and `release/*` (and on version tags, if releases publish artifacts): build, lint and the release packaging. Never on ticket PRs into `develop` or on pushes to feature branches: the coordinator's final gate already runs build and lint locally for every ticket and doesn't wait for CI there. If branch protection is planned, it requires the checks on `main` and `release/*` only. An existing project whose CI runs on every PR: tell the user the coordinator won't wait for it, and offer a `cloud` task that narrows its triggers.
 - **Milestones:** every task belongs to one milestone (release) from the plan.
 - **Split until every leaf is session-sized.** That is the main test: if a piece could not realistically be finished and checked in a single session, split it further, into sub-stories or tasks. Add a level (story under story) only when a story is still too big; don't add levels for their own sake.
 - **Good stories** are independent, valuable on their own, small enough to estimate and checkable (INVEST).
@@ -113,7 +114,7 @@ When the project has several areas that each need real design work, don't design
 ### New project: workflow files
 
 A new project also gets three more files in its folder, written now from the plan's decisions:
-- **`docs/development.md`** from `references/development-template.md`: requirements, the planned commands, the branching workflow, the milestones with their versions, and the release, hotfix and approval rules. Adapt it to what was agreed; don't leave template placeholders in it.
+- **`docs/development.md`** from `references/development-template.md`: requirements, the planned commands, the branching workflow, the milestones with their versions, the release, hotfix and approval rules, and CI for release builds only. Adapt it to what was agreed; don't leave template placeholders in it.
 - **`CLAUDE.md`** at the project root from `references/project-claude-template.md`: what the project is, the stack, the workflow rules (base branch `develop`, hotfixes from `main`), an import of `docs/development.md`, where the plan and tickets live, the **"Behaviour spec" rules**, and the conventions from the plan's decisions.
 - **`docs/spec/README.md`**, the behaviour spec's index, from `~/.claude/skills/init-spec/references/spec-format.md`: the overview and the areas from the plan (no area files yet), the glossary, "How to edit this spec", and under the areas the line "Nothing is implemented yet." Each area file is created by the first spec update that has behaviour for it.
 
