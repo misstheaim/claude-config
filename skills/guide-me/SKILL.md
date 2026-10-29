@@ -1,18 +1,15 @@
 ---
 name: guide-me
-description: Learning mode. Claude never edits files or runs commands; it gives step-by-step instructions and the user does all the work. Args - [y|n] project overview, then the task.
+description: Learning mode. Claude never writes code; it gives step-by-step instructions and the user does all the work. It may edit docs (plans, specs, READMEs, CLAUDE.md), run diagnostic commands and git when the user asks. Args - [y|n] project overview, then the task.
 argument-hint: "[y|n] [task]"
 disable-model-invocation: true
 hooks:
   PreToolUse:
-    - matcher: "Bash|PowerShell|NotebookEdit"
+    - matcher: "Bash|PowerShell|Edit|Write|NotebookEdit"
       hooks:
         - type: command
-          command: 'echo "guide-me mode is on: you must not run commands. Tell the user which command to run and why." >&2; exit 2'
-    - matcher: "Edit|Write"
-      hooks:
-        - type: command
-          command: 'case "$(cat)" in *learning-log.md*|*guide-reports*) exit 0;; esac; echo "guide-me mode is on: you must not edit files. Tell the user which file to open and what to change." >&2; exit 2'
+          command: "python ~/.claude/hooks/guide_me_guard.py"
+          timeout: 10
 ---
 
 # Guide-me mode
@@ -25,10 +22,12 @@ Arguments: `$ARGUMENTS`
 
 ## Hard rules
 
-- **Never** change project files or run commands, not even "just this small one". A hook enforces this for the rest of the session; if a tool call is blocked, do not try another way around it.
+- **Never** write or change code, not even "just this small one": no source files, configs, project files, notebooks, generated code or dependency changes, and not through the shell either (redirects, `sed -i`, scripts, formatters, generators, `git apply`...). A hook enforces this for the rest of the session; if a tool call is blocked, do not try another way around it.
 - You **may** read the code (Read, Grep, Glob) so your instructions point at real files, classes and methods. Never guess a path or a name you could look up.
 - Never paste the complete solution, and never write code tailored to the user's task (their classes, fields, names). Give the user what they need to write it: where, what, and why. Code examples are fine, from the docs or your own, as long as they show the technique in a different context (see "Code examples").
-- The only files you may write are `~/.claude/learning-log.md` (see "Repeated topics") and review reports under `~/.claude/guide-reports/` (see "Working from a review report").
+- **Documentation files** (`.md`, `.txt`, `.rst`, `.adoc`): you may edit them when the user asks or when it's part of the agreed work, e.g. plans, specs, READMEs, `CLAUDE.md` files, `~/.claude/learning-log.md` (see "Repeated topics") and review reports under `~/.claude/guide-reports/` (see "Working from a review report"). Code inside them (e.g. a README's setup snippet) is fine; don't use docs as a way to hand over the solution.
+- **Commands:** run them only when the user asks you to, e.g. "check why the build fails", "look at the logs", "what does the API return?". Use them to diagnose and troubleshoot (builds, tests, logs, requests, `git status`/`diff`/`log`), then explain what you found and what the user should change. Otherwise keep telling the user which command to run and why: running their own commands is part of learning.
+- **Git:** the usual rules apply. Commit, push or create PRs only when the user explicitly asks, following the naming conventions in `~/.claude/CLAUDE.md`. Never run git commands that change the user's files (`restore`, `checkout -- <path>`, `reset --hard`, `stash`, `clean`, `apply`); tell the user instead.
 
 ## Start of the session
 
