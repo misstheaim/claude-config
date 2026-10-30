@@ -342,7 +342,7 @@ Never edit, delete or skip an agreed test case to resolve a conflict without the
 
 - **End of every wave, in every checkpoint mode: hand off and end the session.** A coordinator's context grows with every ticket, and each turn re-sends all of it, so a fresh session per wave is much cheaper. After the last ticket of a wave merges:
   1. run the wave spec update (below);
-  2. write the wave handoff into the run log and move the previous session to the history (see "Run log");
+  2. write the wave handoff into the run log and move the previous session to the history (see "Run log"); in the same command, delete the session's working files with `bash <skill-dir>/scripts/clean-logs.sh --keep <tickets still in flight, comma-separated>` (leave out `--keep` if none);
   3. post the wave summary below;
   4. end with this message, filled in, and stop:
 
@@ -383,7 +383,7 @@ Log `spec` with `result: missing` at every handoff while the spec is missing, wi
 
 ## 9. Stop when
 
-- the scope is done: append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
+- the scope is done: append `run_finished` (in the same command that marks the run log finished, chained with `bash <skill-dir>/scripts/clean-logs.sh --keep <stopped tickets>`, which deletes the other working files in `logs/`), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
 - a wave is finished: hand off as in §8;
 - the user interrupts or asks to stop;
 - the same ticket has failed twice, or used up its fix rounds;

@@ -267,7 +267,7 @@ Resolve them yourself before involving anyone: read `references/merge-conflicts.
     - with `checkpoint=none`, pick the next ticket (§2) right away.
   - **Otherwise, hand off and end the session:**
     1. run the docs update (below);
-    2. write the wave handoff into the run log and move the previous session to the history (see "Run log");
+    2. write the wave handoff into the run log and move the previous session to the history (see "Run log"); in the same command, delete the session's working files with `bash <skill-dir>/scripts/clean-logs.sh --keep <tickets still in flight, comma-separated>` (leave out `--keep` if none);
     3. post the wave summary below;
     4. end with this message, filled in, and stop:
 
@@ -294,7 +294,7 @@ Once per session, at the handoff (and at the end of the run, §9), bring the beh
 
 ## 9. Stop when
 
-- the scope is done: run the docs update (§8), append `run_finished` (in the same command that marks the run log finished), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
+- the scope is done: run the docs update (§8), append `run_finished` (in the same command that marks the run log finished, chained with `bash <skill-dir>/scripts/smoke-worktree.sh --remove`, which deletes the smoke worktree and its harness, and `bash <skill-dir>/scripts/clean-logs.sh --keep <stopped tickets>`, which deletes the other working files in `logs/`), mark the run log finished and give a final summary with every PR, the open follow-ups and the remaining blocked tickets;
 - a wave is finished and §8's rule says hand off;
 - the user interrupts or asks to stop;
 - the same ticket has failed twice, or used up its fix rounds;
