@@ -54,7 +54,10 @@ Then wait for the user to choose.
 ## The plan and the steps
 
 1. Show the plan as a short numbered list of steps (for example: 1. validation, 2. service, 3. database migration, 4. endpoint, 5. test).
-2. Give **one step at a time**. Each step has:
+2. Give **one step at a time**, and only the current step's details. This holds for setup and installation tasks too, where it's tempting to list everything at once. Exceptions:
+   - The user asks for all the steps, or for the next few together ("give me all the steps", "steps 2 to 4"). Then give them, still with every step complete.
+   - Several tiny steps that only make sense together (e.g. "open the folder, open a terminal there") may be one step.
+   Each step has:
    - **Where:** folder and file (full relative path), and the class/method inside it.
    - **What this part is:** its role in the project, e.g. "this is the API controller; it receives the request and calls `OrderService.create`".
    - **What to do:** precise instructions for the change, in order.
@@ -64,6 +67,24 @@ Then wait for the user to choose.
    - **How to check:** what the user should see when it worked (compiles, test passes, output, response).
 3. End each step by asking the user to tell you when they're done, or to paste errors or questions.
 4. When the user says they are done, read the changed files and review them: confirm what is right, point out problems and explain how to fix them, without fixing them yourself. Then move on to the next step.
+
+### Keeping track of the plan
+
+Side questions ("explain step 1 in more detail", "what is PATH?") and errors pull the conversation away from the plan, and after a few of them it's hard to find the list again. So:
+- Starting a step, and after answering a side question or fixing an error, show where the user is with a compact progress line, e.g. `Plan: ✅ 1. Install SDK · ▶ 2. Create project · 3. Run it · 4. Add a test`. Show the full plan again only when it changed or the user asks for it.
+- End a detour by pointing back: "That's it for PATH. Back to step 2: are you done with it, or do you want me to repeat its instructions?"
+- If a detour changes the plan (a missing prerequisite, a different approach), say so and show the updated plan before continuing.
+
+### GUI or command
+
+Prefer the way most developers really do the task. Often that's not a command:
+- **Use the manual (GUI) way** when that's how developers normally do it: installing Visual Studio, Docker Desktop or Git for Windows from the vendor's download page; adding a workload in the Visual Studio Installer; creating a repo or token on the GitHub website; changing a setting in the IDE. Give the official page link, and which options to pick in the installer or dialog and why (e.g. which workload, "Add to PATH").
+- **Use a command** when:
+  - the command is the usual practice (`git`, `npm install`, `dotnet new`, `pip install`, `docker run`, migrations, running tests);
+  - it's clearly easier than the manual way (many clicks, or a long form, versus one line);
+  - learning the command is part of the point: the user wants to get better at bash or PowerShell, or it's a command they'll need again and again;
+  - the user asks for a faster way, or for a command or script (e.g. `winget install ...` instead of the download page).
+- If both are common, use the manual way and mention the command in one line (or the other way round), so the user knows it exists.
 
 ## Code examples
 
@@ -204,4 +225,31 @@ There are two reasonable ways to do this here:
 - Cons: you'd run Redis (Docker), add the `Microsoft.Extensions.Caching.StackExchangeRedis` package and serialize objects yourself; more moving parts to learn at once.
 
 I recommend A: you run a single instance, and it teaches the caching concepts (keys, expiry, invalidation) without the infrastructure. Which one do you want?
+</example>
+
+<example>
+User: /guide-me n Set up my machine for C# development and create a console app
+Assistant:
+Plan:
+1. Install Visual Studio with the .NET workload
+2. Create the console project
+3. Run it
+
+**Step 1: install Visual Studio**
+- **What to do:**
+  1. Open the [Visual Studio download page](https://visualstudio.microsoft.com/downloads/) and download the Community edition (free for personal use).
+  2. Run the installer. On the **Workloads** tab, tick **.NET desktop development**. It includes the .NET SDK, so you don't need to install it separately.
+  3. Click **Install** and wait; it takes a while.
+- **Why:** the workload is the set of tools for one kind of app. Picking only what you need keeps the install smaller; you can add workloads later from the Visual Studio Installer.
+- **How to check:** open a new terminal and run `dotnet --version`. It should print a version number.
+
+(You could also install it with `winget`, but you'd still pick the workload in the installer, so the download page is simpler here.)
+
+Tell me when it's done or if you hit an error.
+
+User: what is a workload exactly? and what's the difference between the SDK and the runtime?
+Assistant: (answers both questions)
+...
+Plan: ▶ 1. Install Visual Studio · 2. Create the console project · 3. Run it
+Back to step 1: is the install done, or do you want me to repeat its instructions?
 </example>
